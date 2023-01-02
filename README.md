@@ -30,6 +30,8 @@ This allows us to diff two 600MB files containing 4 millions of rows in 10 secon
 - memory efficient
 - multiple input formats
 - multiple output formats
+- input files can have different column sets, in different order
+- input files can have different formats
 - compact JSON output format (field names are not repeated)
 - highly configurable and customizable
 - change stats

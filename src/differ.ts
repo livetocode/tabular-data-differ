@@ -28,14 +28,14 @@ export type RowPairProvider = () => RowPair;
 
 export type RowDiffStatus = 'same' | 'added' | 'modified' | 'deleted';
 
-export interface RowComparisonResult {
+export interface RowDiff {
     delta: number;
     status: RowDiffStatus;
     oldRow?: Row;
     newRow?: Row;
 }
 
-export type RowComparisonFilter = (comparison: RowComparisonResult) => boolean;
+export type RowDiffFilter = (diff: RowDiff) => boolean;
 
 export class DiffStats {
     totalComparisons = 0;
@@ -46,19 +46,19 @@ export class DiffStats {
     modified = 0;
     same = 0;
 
-    add(comparison: RowComparisonResult): void {
+    add(diff: RowDiff): void {
         this.totalComparisons++;
 
-        if (comparison.status === 'added') {
+        if (diff.status === 'added') {
             this.added++;
             this.totalChanges++;
-        } else if (comparison.status === 'deleted') {
+        } else if (diff.status === 'deleted') {
             this.deleted++;
             this.totalChanges++;
-        } else if (comparison.status === 'modified') {
+        } else if (diff.status === 'modified') {
             this.modified++;
             this.totalChanges++;
-        } else if (comparison.status === 'same') {
+        } else if (diff.status === 'same') {
             this.same++;
         }        
         this.changePercent = roundDecimals((this.totalChanges / this.totalComparisons) * 100, 2);
@@ -83,7 +83,6 @@ export interface StreamReaderHeader {
 }
 
 export interface StreamReaderFooter {
-    labels: Record<string, string>;
 }
 
 export interface StreamReader {
@@ -120,7 +119,7 @@ export interface StreamWriterFooter {
 export interface StreamWriter {
     open(): void;
     writeHeader(header: StreamWriterHeader): void;
-    writeRow(comparison: RowComparisonResult): void;
+    writeDiff(diff: RowDiff): void;
     writeFooter(footer: StreamWriterFooter): void;
     close(): void;
 }
@@ -217,7 +216,7 @@ export class CsvStreamReader implements StreamReader {
     }
 }
 
-const defaultStatusHeaderName = 'DIFF_STATUS';
+const defaultStatusColumnName = 'DIFF_STATUS';
 
 export class CsvStreamWriter implements StreamWriter{
     private readonly stream: OutputStream;
@@ -235,35 +234,35 @@ export class CsvStreamWriter implements StreamWriter{
     }
 
     writeHeader(header: StreamWriterHeader): void {
-        const columns = [defaultStatusHeaderName, ...header.columns];
+        const columns = [defaultStatusColumnName, ...header.columns];
         if (this.keepOldValues) {
             columns.push(...header.columns.map(h => 'OLD_' + h));
         }
         this.stream.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
     }
 
-    writeRow(comparison: RowComparisonResult): void {
-        if (comparison.oldRow && comparison.newRow) {
-            const items = [comparison.status, ...comparison.newRow];
+    writeDiff(diff: RowDiff): void {
+        if (diff.oldRow && diff.newRow) {
+            const row = [diff.status, ...diff.newRow];
             if (this.keepOldValues) {
-                items.push(...comparison.oldRow);
+                row.push(...diff.oldRow);
             }
-            this.stream.writeLine(serializeRowAsCsvLine(items, this.delimiter));
-        } else if (comparison.oldRow) {
+            this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
+        } else if (diff.oldRow) {
             if (this.keepOldValues) {
-                const emptyRow = comparison.oldRow.map(_ => '');
-                this.stream.writeLine(serializeRowAsCsvLine([comparison.status, ...emptyRow, ...comparison.oldRow], this.delimiter));
+                const emptyRow = diff.oldRow.map(_ => '');
+                this.stream.writeLine(serializeRowAsCsvLine([diff.status, ...emptyRow, ...diff.oldRow], this.delimiter));
             } else {
-                this.stream.writeLine(serializeRowAsCsvLine([comparison.status, ...comparison.oldRow], this.delimiter));
+                this.stream.writeLine(serializeRowAsCsvLine([diff.status, ...diff.oldRow], this.delimiter));
 
             }
-        } else if (comparison.newRow) {
-            const items = [comparison.status, ...comparison.newRow];
+        } else if (diff.newRow) {
+            const row = [diff.status, ...diff.newRow];
             if (this.keepOldValues) {
-                const emptyRow = comparison.newRow.map(_ => '');
-                items.push(...emptyRow);
+                const emptyRow = diff.newRow.map(_ => '');
+                row.push(...emptyRow);
             }
-            this.stream.writeLine(serializeRowAsCsvLine(items, this.delimiter));
+            this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
         }
     }
 
@@ -295,19 +294,19 @@ export class JsonStreamWriter implements StreamWriter{
         this.stream.writeLine(`{ "header": ${h}, "items": [`);
     }
 
-    writeRow(comparison: RowComparisonResult): void {
+    writeDiff(diff: RowDiff): void {
         const record: any = {
-            status: comparison.status,
+            status: diff.status,
         };
         if (this.keepOldValues) {
-            if (comparison.newRow) {
-                record.new = comparison.newRow;
+            if (diff.newRow) {
+                record.new = diff.newRow;
             }
-            if (comparison.oldRow) {
-                record.old = comparison.oldRow;
+            if (diff.oldRow) {
+                record.old = diff.oldRow;
             }    
         } else {
-            record.data = comparison.newRow ?? comparison.oldRow;
+            record.data = diff.newRow ?? diff.oldRow;
         }
         const separator = this.rowCount === 0 ? '' : ',';
         this.rowCount++;
@@ -331,7 +330,7 @@ export class NullStreamWriter implements StreamWriter {
     writeHeader(header: StreamWriterHeader): void {
     }
 
-    writeRow(comparison: RowComparisonResult): void {
+    writeDiff(diff: RowDiff): void {
     }
 
     writeFooter(footer: StreamWriterFooter): void {
@@ -401,7 +400,7 @@ export interface OutputOptions {
     keepOldValues?: boolean;
     keepSameRows?: boolean;
     changeLimit?: number;
-    filter?: RowComparisonFilter;
+    filter?: RowDiffFilter;
     labels?: Record<string, string>;
 }
 
@@ -488,7 +487,7 @@ function createOutputStream(options: OutputOptions): OutputStream {
 
 function createOutput(value?: 'console' | 'null' | Filename | OutputOptions): { 
     writer: StreamWriter, 
-    filter?: RowComparisonFilter,
+    filter?: RowDiffFilter,
     keepSameRows?: boolean, 
     changeLimit?: number,
     labels?: Record<string, string>;
@@ -519,7 +518,7 @@ export class Differ {
     private newReader: StreamReader;
     private newRowFilter?: RowFilter;
     private outputWriter: StreamWriter;
-    private outputFilter?: RowComparisonFilter;
+    private outputFilter?: RowDiffFilter;
     private outputLabels?: Record<string, string>;
     private keepSameRows?: boolean;
     private changeLimit?: number;
@@ -611,8 +610,8 @@ export class Differ {
                 const res = this.evalPair(pair);
                 this.stats.add(res);
 
-                if (this.canWriteComparison(res)) { 
-                    this.outputWriter.writeRow(res);
+                if (this.canWriteDiff(res)) { 
+                    this.outputWriter.writeDiff(res);
                     yield res;    
                 }
                 if (res.delta === 0) {
@@ -631,10 +630,10 @@ export class Differ {
         }
     }
 
-    private canWriteComparison(comparison: RowComparisonResult): boolean {
-        let result = this.keepSameRows === true || comparison.status !== 'same';
+    private canWriteDiff(diff: RowDiff): boolean {
+        let result = this.keepSameRows === true || diff.status !== 'same';
         if (result && this.outputFilter) { 
-            result = this.outputFilter(comparison);
+            result = this.outputFilter(diff);
         }
         return result;
     }
@@ -719,7 +718,7 @@ export class Differ {
         return { oldRow, newRow };
     }
 
-    private evalPair(pair: RowPair): RowComparisonResult {
+    private evalPair(pair: RowPair): RowDiff {
         const delta = this.comparer(this.keys, pair.oldRow, pair.newRow);
         if (delta === 0) {
             const areSame = this.comparer(this.headersWithoutKeys, pair.oldRow, pair.newRow) === 0;

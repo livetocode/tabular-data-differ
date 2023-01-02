@@ -1,18 +1,18 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, Differ, parseCsvLine, RowHeader, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowComparisonResult, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
+import { defaultRowComparer, Differ, parseCsvLine, RowHeader, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
 
 class FakeOutputWriter implements StreamWriter{
     public header?: StreamWriterHeader;
-    public rows: RowComparisonResult[] = [];
+    public diffs: RowDiff[] = [];
     public footer?: StreamWriterFooter;
 
     open(): void {}
     writeHeader(header: StreamWriterHeader): void {
         this.header = header;
     }
-    writeRow(comparison: RowComparisonResult): void {
-        this.rows.push(comparison);
+    writeDiff(diff: RowDiff): void {
+        this.diffs.push(diff);
     }
     writeFooter(footer: StreamWriterFooter): void {
        this.footer = footer;
@@ -333,7 +333,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([]);
+            expect(res.diffs).toEqual([]);
             expect(res.footer?.stats).toEqual({
                 totalComparisons: 0,
                 totalChanges: 0,
@@ -357,7 +357,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'added',
                     delta: 1,
@@ -394,7 +394,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'deleted',
                     delta: -1,
@@ -435,7 +435,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([]);
+            expect(res.diffs).toEqual([]);
             expect(res.footer?.stats).toEqual({
                 totalComparisons: 3,
                 totalChanges: 0,
@@ -464,7 +464,7 @@ new=ID,TITLE,AGE`);
                 keepSameRows: true,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'same',
                     delta: 0,
@@ -511,7 +511,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'AGE', 'NAME']);
-            expect(res.rows).toEqual([]);
+            expect(res.diffs).toEqual([]);
             expect(res.footer?.stats).toEqual({
                 totalComparisons: 3,
                 totalChanges: 0,
@@ -540,7 +540,7 @@ new=ID,TITLE,AGE`);
                 excludedFields: ['AGE'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
-            expect(res.rows).toEqual([]);
+            expect(res.diffs).toEqual([]);
             expect(res.footer?.stats).toEqual({
                 totalComparisons: 3,
                 totalChanges: 0,
@@ -569,7 +569,7 @@ new=ID,TITLE,AGE`);
                 includedFields: ['ID', 'NAME'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
-            expect(res.rows).toEqual([]);
+            expect(res.diffs).toEqual([]);
             expect(res.footer?.stats).toEqual({
                 totalComparisons: 3,
                 totalChanges: 0,
@@ -597,7 +597,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([{
+            expect(res.diffs).toEqual([{
                 status: 'modified',
                 delta: 0,
                 oldRow: ['2','rachel','22'],
@@ -630,7 +630,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'modified',
                     delta: 0,
@@ -677,7 +677,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'AGE', 'NAME']);
-            expect(res.rows).toEqual([{
+            expect(res.diffs).toEqual([{
                 status: 'modified',
                 delta: 0,
                 oldRow: ['2','22','rachel'],
@@ -711,7 +711,7 @@ new=ID,TITLE,AGE`);
                 excludedFields: ['AGE'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
-            expect(res.rows).toEqual([{
+            expect(res.diffs).toEqual([{
                 status: 'modified',
                 delta: 0,
                 oldRow: ['2','rachel'],
@@ -745,7 +745,7 @@ new=ID,TITLE,AGE`);
                 includedFields: ['ID', 'NAME'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
-            expect(res.rows).toEqual([{
+            expect(res.diffs).toEqual([{
                 status: 'modified',
                 delta: 0,
                 oldRow: ['2','rachel'],
@@ -777,7 +777,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([{
+            expect(res.diffs).toEqual([{
                 status: 'deleted',
                 delta: -1,
                 oldRow: ['2','rachel','22'],
@@ -809,7 +809,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([{
+            expect(res.diffs).toEqual([{
                 status: 'added',
                 delta: 1,
                 oldRow: undefined,
@@ -841,7 +841,7 @@ new=ID,TITLE,AGE`);
                 keyFields: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'deleted',
                     delta: -1,
@@ -901,7 +901,7 @@ new=ID,TITLE,AGE`);
                 keepSameRows: true,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'same',
                     delta: 0,
@@ -956,7 +956,7 @@ new=ID,TITLE,AGE`);
                 descendingOrder: true,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'added',
                     delta: 1,
@@ -1011,7 +1011,7 @@ new=ID,TITLE,AGE`);
                 changeLimit: 2,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
-            expect(res.rows).toEqual([
+            expect(res.diffs).toEqual([
                 {
                     status: 'same',
                     delta: 0,
@@ -1053,7 +1053,7 @@ new=ID,TITLE,AGE`);
             });
             differ.execute();
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
-            expect(output.rows).toEqual([
+            expect(output.diffs).toEqual([
                 { delta: -1, status: 'deleted', oldRow: [ '01', 'a1', 'b1', 'c1' ] },
                 {
                   delta: 0,
@@ -1094,7 +1094,7 @@ new=ID,TITLE,AGE`);
             });
             differ.execute();
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
-            expect(output.rows).toEqual([
+            expect(output.diffs).toEqual([
                 { delta: -1, status: 'deleted', oldRow: [ '01', 'a1', 'b1', 'c1' ] },
                 {
                   delta: 0,
