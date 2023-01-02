@@ -13,7 +13,11 @@
     "changes",
     "comparison"    
   ],
-  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/livetocode/tabular-data-differ.git"
+  },
+  "main": "dist/differ.js",
   "scripts": {
     "compile": "./node_modules/.bin/tsc",
     "test": "jest",
