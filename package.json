@@ -1,0 +1,37 @@
+{
+  "name": "tabular-data-differ",
+  "version": "1.0.0",
+  "description": "A very efficient library for diffing two sorted streams of tabular data, such as CSV files.",
+  "keywords": [
+    "table",
+    "tabular data",
+    "CSV",
+    "TSV",
+    "diff",
+    "difference",
+    "delta",
+    "changes",
+    "comparison"    
+  ],
+  "main": "index.js",
+  "scripts": {
+    "compile": "./node_modules/.bin/tsc",
+    "test": "jest",
+    "show-coverage": "open output/coverage/lcov-report/index.html"
+  },
+  "author": "Morgan Martinet",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "n-readlines": "1.0.1"
+  },
+  "devDependencies": {
+    "@jest/globals": "29.3.1",
+    "@types/jest": "29.2.4",
+    "@types/n-readlines": "1.0.3",
+    "@types/node": "18.11.17",
+    "jest": "29.3.1",
+    "ts-jest": "29.0.3",
+    "typescript": "4.9.4"
+  }
+}
