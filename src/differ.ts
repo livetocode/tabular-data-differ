@@ -35,7 +35,7 @@ export interface RowDiff {
     newRow?: Row;
 }
 
-export type RowDiffFilter = (diff: RowDiff) => boolean;
+export type RowDiffFilter = (rowDiff: RowDiff) => boolean;
 
 export class DiffStats {
     totalComparisons = 0;
@@ -46,19 +46,19 @@ export class DiffStats {
     modified = 0;
     same = 0;
 
-    add(diff: RowDiff): void {
+    add(rowDiff: RowDiff): void {
         this.totalComparisons++;
 
-        if (diff.status === 'added') {
+        if (rowDiff.status === 'added') {
             this.added++;
             this.totalChanges++;
-        } else if (diff.status === 'deleted') {
+        } else if (rowDiff.status === 'deleted') {
             this.deleted++;
             this.totalChanges++;
-        } else if (diff.status === 'modified') {
+        } else if (rowDiff.status === 'modified') {
             this.modified++;
             this.totalChanges++;
-        } else if (diff.status === 'same') {
+        } else if (rowDiff.status === 'same') {
             this.same++;
         }        
         this.changePercent = roundDecimals((this.totalChanges / this.totalComparisons) * 100, 2);
@@ -119,7 +119,7 @@ export interface StreamWriterFooter {
 export interface StreamWriter {
     open(): void;
     writeHeader(header: StreamWriterHeader): void;
-    writeDiff(diff: RowDiff): void;
+    writeDiff(rowDiff: RowDiff): void;
     writeFooter(footer: StreamWriterFooter): void;
     close(): void;
 }
@@ -241,25 +241,25 @@ export class CsvStreamWriter implements StreamWriter{
         this.stream.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
     }
 
-    writeDiff(diff: RowDiff): void {
-        if (diff.oldRow && diff.newRow) {
-            const row = [diff.status, ...diff.newRow];
+    writeDiff(rowDiff: RowDiff): void {
+        if (rowDiff.oldRow && rowDiff.newRow) {
+            const row = [rowDiff.status, ...rowDiff.newRow];
             if (this.keepOldValues) {
-                row.push(...diff.oldRow);
+                row.push(...rowDiff.oldRow);
             }
             this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
-        } else if (diff.oldRow) {
+        } else if (rowDiff.oldRow) {
             if (this.keepOldValues) {
-                const emptyRow = diff.oldRow.map(_ => '');
-                this.stream.writeLine(serializeRowAsCsvLine([diff.status, ...emptyRow, ...diff.oldRow], this.delimiter));
+                const emptyRow = rowDiff.oldRow.map(_ => '');
+                this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...emptyRow, ...rowDiff.oldRow], this.delimiter));
             } else {
-                this.stream.writeLine(serializeRowAsCsvLine([diff.status, ...diff.oldRow], this.delimiter));
+                this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...rowDiff.oldRow], this.delimiter));
 
             }
-        } else if (diff.newRow) {
-            const row = [diff.status, ...diff.newRow];
+        } else if (rowDiff.newRow) {
+            const row = [rowDiff.status, ...rowDiff.newRow];
             if (this.keepOldValues) {
-                const emptyRow = diff.newRow.map(_ => '');
+                const emptyRow = rowDiff.newRow.map(_ => '');
                 row.push(...emptyRow);
             }
             this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
@@ -294,19 +294,19 @@ export class JsonStreamWriter implements StreamWriter{
         this.stream.writeLine(`{ "header": ${h}, "items": [`);
     }
 
-    writeDiff(diff: RowDiff): void {
+    writeDiff(rowDiff: RowDiff): void {
         const record: any = {
-            status: diff.status,
+            status: rowDiff.status,
         };
         if (this.keepOldValues) {
-            if (diff.newRow) {
-                record.new = diff.newRow;
+            if (rowDiff.newRow) {
+                record.new = rowDiff.newRow;
             }
-            if (diff.oldRow) {
-                record.old = diff.oldRow;
+            if (rowDiff.oldRow) {
+                record.old = rowDiff.oldRow;
             }    
         } else {
-            record.data = diff.newRow ?? diff.oldRow;
+            record.data = rowDiff.newRow ?? rowDiff.oldRow;
         }
         const separator = this.rowCount === 0 ? '' : ',';
         this.rowCount++;
@@ -330,7 +330,7 @@ export class NullStreamWriter implements StreamWriter {
     writeHeader(header: StreamWriterHeader): void {
     }
 
-    writeDiff(diff: RowDiff): void {
+    writeDiff(rowDiff: RowDiff): void {
     }
 
     writeFooter(footer: StreamWriterFooter): void {
@@ -630,10 +630,10 @@ export class Differ {
         }
     }
 
-    private canWriteDiff(diff: RowDiff): boolean {
-        let result = this.keepSameRows === true || diff.status !== 'same';
+    private canWriteDiff(rowDiff: RowDiff): boolean {
+        let result = this.keepSameRows === true || rowDiff.status !== 'same';
         if (result && this.outputFilter) { 
-            result = this.outputFilter(diff);
+            result = this.outputFilter(rowDiff);
         }
         return result;
     }

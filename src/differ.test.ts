@@ -11,8 +11,8 @@ class FakeOutputWriter implements StreamWriter{
     writeHeader(header: StreamWriterHeader): void {
         this.header = header;
     }
-    writeDiff(diff: RowDiff): void {
-        this.diffs.push(diff);
+    writeDiff(rowDiff: RowDiff): void {
+        this.diffs.push(rowDiff);
     }
     writeFooter(footer: StreamWriterFooter): void {
        this.footer = footer;
