@@ -1,6 +1,6 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, diff, Differ, parseCsvLine, RowHeader, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
+import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
 
 class FakeOutputWriter implements StreamWriter{
     public header?: StreamWriterHeader;
@@ -112,7 +112,7 @@ describe('differ', () => {
             expect(() => defaultRowComparer([], undefined, undefined)).toThrowError('Expected to have at least one key in keys parameter');
         });
         describe('undefined rows', () => {
-            const keys: RowHeader[] = [{
+            const keys: Column[] = [{
                 name: 'id',
                 oldIndex: 0,
                 newIndex: 0,
@@ -135,7 +135,7 @@ describe('differ', () => {
             });    
         });        
         describe('single field', () => {
-            const keys: RowHeader[] = [{
+            const keys: Column[] = [{
                 name: 'id',
                 oldIndex: 0,
                 newIndex: 0,
@@ -160,7 +160,7 @@ describe('differ', () => {
             });    
         });
         describe('2 fields', () => {
-            const keys: RowHeader[] = [
+            const keys: Column[] = [
                 {
                     name: 'i1d',
                     oldIndex: 0,
@@ -268,7 +268,7 @@ describe('differ', () => {
                     'ID,NAME,AGE',
                 ],
                 keyFields: ['ID'],
-            })).toThrowError('Expected to find headers in old source');
+            })).toThrowError('Expected to find columns in old source');
         });
         test('should have headers in new source', () => {
             expect(() => diffStrings({
@@ -278,7 +278,7 @@ describe('differ', () => {
                 newLines: [
                 ],
                 keyFields: ['ID'],
-            })).toThrowError('Expected to find headers in new source');            
+            })).toThrowError('Expected to find columns in new source');            
         });
         test('should match headers in both sources', () => {
             expect(() => diffStrings({
@@ -289,7 +289,7 @@ describe('differ', () => {
                     'ID,TITLE,AGE',
                 ],
                 keyFields: ['ID'],
-            })).toThrowError(`Could not find new header 'TITLE' in old headers:
+            })).toThrowError(`Could not find new column 'TITLE' in old columns:
 old=ID,NAME,AGE
 new=ID,TITLE,AGE`);            
         });
@@ -302,7 +302,7 @@ new=ID,TITLE,AGE`);
                     'ID,NAME,AGE',
                 ],
                 keyFields: ['ID'],
-            })).toThrowError(`Could not find key 'ID' in old headers: CODE,NAME,AGE`);            
+            })).toThrowError(`Could not find key 'ID' in old columns: CODE,NAME,AGE`);            
         });
         test('should find keys in new headers', () => {
             expect(() => diffStrings({
@@ -315,7 +315,7 @@ new=ID,TITLE,AGE`);
                     'a1,a,33',
                 ],
                 keyFields: ['ID'],
-            })).toThrowError(`Could not find key 'ID' in new headers: CODE,NAME,AGE`);            
+            })).toThrowError(`Could not find key 'ID' in new columns: CODE,NAME,AGE`);            
         });
     });
     describe('changes', () => {        

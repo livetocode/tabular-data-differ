@@ -167,9 +167,9 @@ const differ = diff({
     },
     keyFields: ['id'],
 });
-console.log('headers:', differ.getHeaders());
-for (const change of differ) {
-    console.log(change);
+console.log('columns:', differ.getColumns());
+for (const rowDiff of differ) {
+    console.log(rowDiff);
 }
 console.log('stats:', differ.getStats());
 ```
@@ -257,7 +257,7 @@ Initiates the opening of the input streams (old, new) and reads the headers.
 
 Closes all open streams.
 
-#### getHeaders
+#### getColumns
 
 Returns the current column names. This will open the streams if it wasn't already done.
 

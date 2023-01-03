@@ -14,11 +14,11 @@ export interface RowPair {
     newRow?: Row;
 }
 
-export type RowComparer = (keys: RowHeader[], a? : Row, b?: Row) => number;
+export type RowComparer = (keys: Column[], a? : Row, b?: Row) => number;
 
 export type RowNormalizer = (row?: Row) => Row | undefined;
 
-export type RowHeader = {
+export type Column = {
     name: string;
     oldIndex: number;
     newIndex: number;
@@ -82,14 +82,10 @@ export interface StreamReaderHeader {
     labels?: Record<string, string>;
 }
 
-export interface StreamReaderFooter {
-}
-
 export interface StreamReader {
     open(): void;
     readHeader(): StreamReaderHeader;
     readRow(): Row | undefined;
-    readFooter(): StreamReaderFooter | undefined;
     close(): void;
 }
 
@@ -207,10 +203,6 @@ export class CsvStreamReader implements StreamReader {
         return parseCsvLine(this.delimiter, this.stream.readLine());
     }
 
-    readFooter(): StreamReaderFooter | undefined {
-        return undefined;
-    }
-
     close(): void {
         this.stream.close();        
     }
@@ -236,7 +228,7 @@ export class CsvStreamWriter implements StreamWriter{
     writeHeader(header: StreamWriterHeader): void {
         const columns = [defaultStatusColumnName, ...header.columns];
         if (this.keepOldValues) {
-            columns.push(...header.columns.map(h => 'OLD_' + h));
+            columns.push(...header.columns.map(col => 'OLD_' + col));
         }
         this.stream.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
     }
@@ -599,11 +591,10 @@ export class Differ {
     private oldSource: Source;
     private newSource: Source;
     private comparer: RowComparer = defaultRowComparer;
-    private oldHeaders: Row = [];
-    private newHeaders: Row = [];
-    private headers: RowHeader[] = [];
-    private keys: RowHeader[] = [];
-    private headersWithoutKeys: RowHeader[] = [];
+    private keys: Column[] = [];
+    private columns: Column[] = [];
+    private columnNames: string[] = [];
+    private columnsWithoutKeys: Column[] = [];
     private normalizeOldRow: RowNormalizer = row => row;
     private normalizeNewRow: RowNormalizer = row => row;
 
@@ -648,11 +639,11 @@ export class Differ {
      * Note that it will open the input streams to read the headers, but only once.
      * @returns a list of column names
      */
-    getHeaders(): string[] {
-        if (this.headers.length === 0) {
+    getColumns(): string[] {
+        if (this.columnNames.length === 0) {
             this.open();
         }
-        return this.headers.map(h => h.name);
+        return this.columnNames;
     }
 
     /**
@@ -677,8 +668,8 @@ export class Differ {
      * console.log(stats);
      */
     to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
+        const columns = this.getColumns();
         const output = createOutput(options);
-        const columns = this.getHeaders();
         output.writer.open();
         try {
             output.writer.writeHeader({
@@ -726,9 +717,9 @@ export class Differ {
      *     },
      *     keyFields: ['id'],
      * });
-     * console.log('headers:', differ.getHeaders());
-     * for (const change of differ) {
-     *     console.log(change);
+     * console.log('columns:', differ.getColumns());
+     * for (const rowDiff of differ) {
+     *     console.log(rowDiff);
      * }
      * console.log('stats:', differ.getStats());
      */
@@ -746,89 +737,88 @@ export class Differ {
                 this.ensurePairsAreInAscendingOrder(previousPair, pair);
                 previousPair = pair;
 
-                const res = this.evalPair(pair);
-                this.stats.add(res);
-                yield res;    
+                const rowDiff = this.evalPair(pair);
+                this.stats.add(rowDiff);
+                yield rowDiff;    
 
-                if (res.delta === 0) {
+                if (rowDiff.delta === 0) {
                     pairProvider = () => this.getNextPair();
-                } else if (res.delta > 0) {
+                } else if (rowDiff.delta > 0) {
                     pairProvider = () => ({ oldRow: pair.oldRow, newRow: this.getNextNewRow() });
                 } else {
                     pairProvider = () => ({ oldRow: this.getNextOldRow(), newRow: pair.newRow });
                 }
             }
         } finally {
-            this.oldSource.reader.readFooter();
-            this.newSource.reader.readFooter();
             this.close();
         }
     }
 
     private extractHeaders() {
-        this.oldHeaders = this.oldSource.reader.readHeader().columns;
-        this.newHeaders = this.newSource.reader.readHeader().columns;
-        if (this.oldHeaders.length === 0) {
-            throw new Error('Expected to find headers in old source');
+        const oldHeader = this.oldSource.reader.readHeader();
+        const newHeader = this.newSource.reader.readHeader();
+        if (oldHeader.columns.length === 0) {
+            throw new Error('Expected to find columns in old source');
         }
-        if (this.newHeaders.length === 0) {
-            throw new Error('Expected to find headers in new source');
+        if (newHeader.columns.length === 0) {
+            throw new Error('Expected to find columns in new source');
         }
-        this.keys = this.normalizeKeys(this.oldHeaders, this.newHeaders, this.options.keyFields);
-        this.headers = this.normalizeHeaders(this.oldHeaders, this.newHeaders);
-        this.headersWithoutKeys = this.headers.filter(x => !this.keys.some(y => y.name === x.name));
-        if (!sameArrays(this.oldHeaders, this.headers.map(h => h.name))) {
-            this.normalizeOldRow = row => row ? this.headers.map(h => row[h.oldIndex]) : undefined;
+        this.keys = this.normalizeKeys(oldHeader.columns, newHeader.columns, this.options.keyFields);
+        this.columns = this.normalizeColumns(oldHeader.columns, newHeader.columns);
+        this.columnsWithoutKeys = this.columns.filter(col => !this.keys.some(key => key.name === col.name));
+        this.columnNames = this.columns.map(col => col.name);
+        if (!sameArrays(oldHeader.columns, this.columns.map(col => col.name))) {
+            this.normalizeOldRow = row => row ? this.columns.map(col => row[col.oldIndex]) : undefined;
         }
-        if (!sameArrays(this.newHeaders, this.headers.map(h => h.name))) {
-            this.normalizeNewRow = row => row ? this.headers.map(h => row[h.newIndex]) : undefined;
+        if (!sameArrays(newHeader.columns, this.columns.map(col => col.name))) {
+            this.normalizeNewRow = row => row ? this.columns.map(col => row[col.newIndex]) : undefined;
         }
     }
 
-    private normalizeHeaders(oldHeaders: Row, newHeaders: Row) {
+    private normalizeColumns(oldColumns: Row, newColumns: Row) {
         const includedFields = new Set<string>(this.options.includedFields);
         const excludedFields = new Set<string>(this.options.excludedFields);
-        const headers: RowHeader[] = [];
-        for (let i = 0; i < newHeaders.length; i++) {
-            const h = newHeaders[i];
-            const isIncluded = includedFields.size === 0 || includedFields.has(h);
+        const columns: Column[] = [];
+        for (let i = 0; i < newColumns.length; i++) {
+            const newCol = newColumns[i];
+            const isIncluded = includedFields.size === 0 || includedFields.has(newCol);
             if (isIncluded) {
-                const isExcluded = excludedFields.has(h);
+                const isExcluded = excludedFields.has(newCol);
                 if (!isExcluded) {
-                    const oldIdx = oldHeaders.indexOf(h);
+                    const oldIdx = oldColumns.indexOf(newCol);
                     if (oldIdx < 0) {
-                        throw new Error(`Could not find new header '${h}' in old headers:\nold=${oldHeaders}\nnew=${newHeaders}`);
+                        throw new Error(`Could not find new column '${newCol}' in old columns:\nold=${oldColumns}\nnew=${newColumns}`);
                     }
-                    headers.push({
-                        name: h,
+                    columns.push({
+                        name: newCol,
                         newIndex: i,
                         oldIndex: oldIdx,
                     });
                 }
             }
         }
-        return headers;
+        return columns;
     }
 
-    private normalizeKeys(oldHeaders: Row, newHeaders: Row, keyFields: string[]) {
-        const headers: RowHeader[] = [];
+    private normalizeKeys(oldColumns: Row, newColumns: Row, keyFields: string[]) {
+        const columns: Column[] = [];
         for (const keyField of keyFields) {
-            const oldIndex = oldHeaders.indexOf(keyField);
+            const oldIndex = oldColumns.indexOf(keyField);
             if (oldIndex < 0) {
-                throw new Error(`Could not find key '${keyField}' in old headers: ${oldHeaders}`);
+                throw new Error(`Could not find key '${keyField}' in old columns: ${oldColumns}`);
             }
-            const newIndex = newHeaders.indexOf(keyField);
+            const newIndex = newColumns.indexOf(keyField);
             if (newIndex < 0) {
-                throw new Error(`Could not find key '${keyField}' in new headers: ${newHeaders}`);
+                throw new Error(`Could not find key '${keyField}' in new columns: ${newColumns}`);
             }
-            headers.push({
+            columns.push({
                 name: keyField,
                 newIndex,
                 oldIndex,
             });
 
         }
-        return headers;
+        return columns;
     }
 
     private getNextOldRow(): Row | undefined {
@@ -848,7 +838,7 @@ export class Differ {
     private evalPair(pair: RowPair): RowDiff {
         const delta = this.comparer(this.keys, pair.oldRow, pair.newRow);
         if (delta === 0) {
-            const areSame = this.comparer(this.headersWithoutKeys, pair.oldRow, pair.newRow) === 0;
+            const areSame = this.comparer(this.columnsWithoutKeys, pair.oldRow, pair.newRow) === 0;
             const newRow = this.normalizeNewRow(pair.newRow);
             const oldRow = this.normalizeOldRow(pair.oldRow);
             return { delta, status: areSame ? 'same' : 'modified', oldRow, newRow };
@@ -959,7 +949,7 @@ export function serializeRowAsCsvLine(row : Row, delimiter?: string) {
     return row.map(serializeCsvField).join(delimiter ?? ',');
 }
 
-export function defaultRowComparer(keys: RowHeader[], a? : Row, b?: Row): number {
+export function defaultRowComparer(keys: Column[], a? : Row, b?: Row): number {
     if (keys.length === 0) {
         throw new Error('Expected to have at least one key in keys parameter');
     }
