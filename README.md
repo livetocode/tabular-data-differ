@@ -219,6 +219,18 @@ format   | no     | csv         | either an existing format (csv or json) or a f
 delimiter| no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
 filter   | no     |             | a filter to allow or reject the input rows.
 
+### OutputOptions
+
+Name         |Required|Default value|Description
+-------------|--------|-------------|-----------
+stream       | no     | console     | either a standard output (console, null), a string filename or an instance of an InputStream (like FileInputStream). 
+format       | no     | csv         | either an existing format (csv or json) or a factory function to create your own format.
+delimiter    | no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
+filter       | no     |             | a filter to select which changes should be sent to the output stream.
+keepOldValues| no     | false       | specifies if the output should contain both the old and new values for each row.
+keepSameRows | no     | false       | specifies if the output should also contain the rows that haven't changed.
+changeLimit  | no     |             | specifies a maximum number of differences that should be outputted.
+labels       | no     |             | a dictionary of key/value that allows to add custom metadata to the generated file.
 
 ### Differ options
 
@@ -233,7 +245,7 @@ descendingOrder | no     | false       | specifies if the input files are in des
 
 ### diff function
 
-Creates a Differ object from the specified DifferOptions.
+Creates a Differ object from the submitted DifferOptions.
 
 ### Differ methods
 
@@ -260,20 +272,6 @@ Initiates the comparison between the old and new sources and sends the diffs to 
 This returns the change stats once completed.
 
 The options parameter can be either a standard output (console, null), a string filename or an OutputOptions.
-
-#### OutputOptions
-
-Name         |Required|Default value|Description
--------------|--------|-------------|-----------
-stream       | no     | console     | either a standard output (console, null), a string filename or an instance of an InputStream (like FileInputStream). 
-format       | no     | csv         | either an existing format (csv or json) or a factory function to create your own format.
-delimiter    | no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
-filter       | no     |             | a filter to allow or reject the input rows.
-keepOldValues| no     | false       | specifies if the output should contain both the old and new values for each row.
-keepSameRows | no     | false       | specifies if the output should alsol contain the rows that haven't changed.
-changeLimit  | no     |             | specifies a maximum number of differences that should be outputted.
-labels       | no     |             | a dictionary of key/value that allows to add custom metadata to the generated file.
-
 
 #### iterator
 

@@ -384,26 +384,83 @@ export class FileOutputStream implements OutputStream {
     }
 }
 
+/** 
+ * A string containing a filename 
+ */
 export type Filename = string;
 
+/**
+ * Options for configuring an input stream that will be compared to another similar stream
+ * in order to obtain the changes between those two sources.
+ */
 export interface SourceOptions {
+    /**
+     * Specifies the input stream, either providing a string filename or a custom instance of an InputStream
+     */
     stream: Filename | InputStream;
+    /**
+     * Specifies the format of the input stream, either providing a standard format (csv or json) or your factory function for producing a custom StreamReader instance. 
+     * Defaults to 'csv'.
+     */
     format?: 'csv' | 'json' | StreamReaderFactory; // Defaults to CSV
+    /**
+     * Specifies the char delimiting the fields in a row.
+     * Defaults to ','. 
+     * Used only by the CSV format.
+     */
     delimiter?: string;
+    /**
+     * Specifies a filter to allow or reject the input rows
+     */
     filter?: RowFilter;
 }
 
+/**
+ * Options for configuring the output destination of the changes emitted by the Differ object
+ */
 export interface OutputOptions {
-    stream?:  'console' | 'null' | Filename | OutputStream; // Defaults to console
-    format?: 'csv' | 'json' | StreamWriterFactory; // Defaults to CSV
-    delimiter?: string;
+    /**
+     * Specifies a standard output (console, null), a string filename or an instance of an InputStream (like FileInputStream). 
+     * Defaults to 'console'.
+     */
+    stream?:  'console' | 'null' | Filename | OutputStream;
+    /**
+     * Specifies an existing format (csv or json) or a factory function to create your own format.
+     * Defaults to 'csv'.
+     */
+    format?: 'csv' | 'json' | StreamWriterFactory;
+    /**
+     * Specifies the char delimiting the fields in a row.
+     * Defaults to ','. 
+     * Used only by the CSV format.
+     */
+     delimiter?: string;
+    /**
+     * Specifies if the output should contain both the old and new values for each row.
+     */
     keepOldValues?: boolean;
+    /**
+     * Specifies if the output should also contain the rows that haven't changed.
+     */
     keepSameRows?: boolean;
+    /**
+     * Specifies a maximum number of differences that should be outputted.
+     */
     changeLimit?: number;
-    filter?: RowDiffFilter;
+    /**
+     * Specifies a filter to select which changes should be sent to the output stream.
+     */
+     filter?: RowDiffFilter;
+     /**
+      * Specifies a dictionary of key/value that allows to add custom metadata to the generated file.
+      */
     labels?: Record<string, string>;
 }
 
+/**
+ * Options for configuring the Differ object that will traverse two input streams in parallel in order to compare their rows
+ * and produce a change set.
+ */
 export interface DifferOptions {
     oldSource: Filename | SourceOptions; 
     newSource: Filename | SourceOptions; 
@@ -413,10 +470,22 @@ export interface DifferOptions {
     descendingOrder?: boolean;
 }
 
+/**
+ * Creates a new differ object allowing you to compare two input streams and eventually send the changes to a specific output.
+ * @param options the options required to compare two streams
+ * @returns a Differ instance
+ * @example
+ * import { diff } from 'tabular-data-differ';
+ * const stats = diff({
+ *   oldSource: './tests/a.csv',
+ *   newSource: './tests/b.csv',
+ *   keyFields: ['id'],
+ * }).to('console');
+ * console.log(stats);
+ */
 export function diff(options: DifferOptions): Differ {
     return new Differ(options);
 }
-
 
 function createInputStream(options: SourceOptions): InputStream {
     if (typeof options.stream === 'string') {
@@ -444,11 +513,21 @@ function createStreamReader(options: SourceOptions): StreamReader {
     return new CsvStreamReader(readerOptions);    
 }
 
-function createSource(value: Filename | SourceOptions): { reader: StreamReader, filter?: RowFilter} {
+interface Source {
+    reader: StreamReader;
+    filter?: RowFilter;
+}
+
+function createSource(value: Filename | SourceOptions): Source {
     if (typeof value === 'string') {
-        return { reader: new CsvStreamReader({ stream: new FileInputStream(value) }) };
+        return { 
+            reader: new CsvStreamReader({ stream: new FileInputStream(value) }) 
+        };
     }
-    return { reader: createStreamReader(value), filter: value.filter };
+    return { 
+        reader: createStreamReader(value), 
+        filter: value.filter 
+    };
 }
 
 function createStreamWriter(options: OutputOptions): StreamWriter {
@@ -517,10 +596,8 @@ function createOutput(value: 'console' | 'null' | Filename | OutputOptions): {
 export class Differ {
     private stats = new DiffStats();
     private isOpen = false;
-    private oldReader: StreamReader;
-    private oldRowFilter?: RowFilter;
-    private newReader: StreamReader;
-    private newRowFilter?: RowFilter;
+    private oldSource: Source;
+    private newSource: Source;
     private comparer: RowComparer = defaultRowComparer;
     private oldHeaders: Row = [];
     private newHeaders: Row = [];
@@ -531,35 +608,46 @@ export class Differ {
     private normalizeNewRow: RowNormalizer = row => row;
 
     constructor(private options: DifferOptions) {
-        const oldSource = createSource(options.oldSource);
-        this.oldReader = oldSource.reader;
-        this.oldRowFilter = oldSource.filter;
-        const newSource = createSource(options.newSource);
-        this.newReader = newSource.reader;
-        this.newRowFilter = newSource.filter;
+        this.oldSource = createSource(options.oldSource);
+        this.newSource = createSource(options.newSource);
         this.comparer = options.descendingOrder === true ? 
                             invertRowComparer(defaultRowComparer) : 
                             defaultRowComparer;
     }
 
+    /**
+     * Opens the input streams (old and new) and reads the headers.
+     * This will be automatically called by getHeaders, the iterator or the "to" method.
+     * This does nothing if the streams are already open.
+     */
     open(): void {
         if (!this.isOpen) {
             this.isOpen = true;
             this.stats = new DiffStats();
-            this.oldReader.open();
-            this.newReader.open();
+            this.oldSource.reader.open();
+            this.newSource.reader.open();
             this.extractHeaders();
         }
     }
-    
+
+    /**
+     * Closes the input streams.
+     * This will be automatically called by the iterator or the "to" method.
+     * This does nothing if the streams are not open.
+     */
     close(): void {
         if (this.isOpen) {
-            this.newReader.close();
-            this.oldReader.close();
+            this.newSource.reader.close();
+            this.oldSource.reader.close();
             this.isOpen = false;
         }
     }
 
+    /**
+     * gets the normalized column names from the old and new streams, according to the includedFields/excludedFields constraints.
+     * Note that it will open the input streams to read the headers, but only once.
+     * @returns a list of column names
+     */
     getHeaders(): string[] {
         if (this.headers.length === 0) {
             this.open();
@@ -567,10 +655,27 @@ export class Differ {
         return this.headers.map(h => h.name);
     }
 
+    /**
+     * gets the diff stats
+     * @returns the diff stats
+     */
     getStats(): DiffStats {
         return this.stats;
     }
 
+    /**
+     * Iterates over the changes and sends them to the submitted output.
+     * @param options a standard ouput such as console or null, a string filename or a custom OutputOptions.
+     * @returns the change stats once all the changes have been processed.
+     * @example
+     * import { diff } from 'tabular-data-differ';
+     * const stats = diff({
+     *   oldSource: './tests/a.csv',
+     *   newSource: './tests/b.csv',
+     *   keyFields: ['id'],
+     * }).to('console');
+     * console.log(stats);
+     */
     to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
         const output = createOutput(options);
         const columns = this.getHeaders();
@@ -599,6 +704,34 @@ export class Differ {
         return this.stats;
     }
     
+    /**
+     * An iterator emitting changes between two input streams (old and new).
+     * @yields RowDiff
+     * @example
+     * import { diff, ArrayInputStream } from 'tabular-data-differ';
+     * const differ = diff({
+     *     oldSource: {
+     *         stream: new ArrayInputStream([
+     *             'id,name',
+     *             '1,john',
+     *             '2,mary',
+     *         ]),
+     *     },
+     *     newSource: {
+     *         stream: new ArrayInputStream([
+     *             'id,name',
+     *             '1,john',
+     *             '3,sarah',
+     *         ]),
+     *     },
+     *     keyFields: ['id'],
+     * });
+     * console.log('headers:', differ.getHeaders());
+     * for (const change of differ) {
+     *     console.log(change);
+     * }
+     * console.log('stats:', differ.getStats());
+     */
     *[Symbol.iterator]() {
         this.open();
         try {
@@ -626,15 +759,15 @@ export class Differ {
                 }
             }
         } finally {
-            this.oldReader.readFooter();
-            this.newReader.readFooter();
+            this.oldSource.reader.readFooter();
+            this.newSource.reader.readFooter();
             this.close();
         }
     }
 
     private extractHeaders() {
-        this.oldHeaders = this.oldReader.readHeader().columns;
-        this.newHeaders = this.newReader.readHeader().columns;
+        this.oldHeaders = this.oldSource.reader.readHeader().columns;
+        this.newHeaders = this.newSource.reader.readHeader().columns;
         if (this.oldHeaders.length === 0) {
             throw new Error('Expected to find headers in old source');
         }
@@ -699,11 +832,11 @@ export class Differ {
     }
 
     private getNextOldRow(): Row | undefined {
-        return nextFilteredRow(this.oldReader, this.oldRowFilter);
+        return nextFilteredRow(this.oldSource.reader, this.oldSource.filter);
     }
 
     private getNextNewRow(): Row | undefined {
-        return nextFilteredRow(this.newReader, this.newRowFilter);
+        return nextFilteredRow(this.newSource.reader, this.newSource.filter);
     }
 
     private getNextPair(): RowPair {
