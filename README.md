@@ -64,103 +64,93 @@ The average complexity, assuming a low rate of additions or deletions, should be
 ### Diff 2 CSV files on the console
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keyFields: ['id'],
-});
-const stats = differ.execute();
+}).to('console');
 console.log(stats);
 ```
 
 ### Diff 2 CSV files and only get the stats
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     output: 'null',
     keyFields: ['id'],
-});
-const stats = differ.execute();
+}).to('null');
 console.log(stats);
 ```
 
 ### Diff 2 CSV files and produce a CSV file
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    output: './temp/delta.csv',
     keyFields: ['id'],
-});
-const stats = differ.execute();
+}).to('./temp/delta.csv');
 console.log(stats);
 ```
 
 ### Diff 2 CSV files and produce a JSON file
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    output: {
-        stream: './temp/delta.json',
-        format: 'json',
-    },
     keyFields: ['id'],
+}).to({
+    stream: './temp/delta.json',
+    format: 'json',
 });
-const stats = differ.execute();
 console.log(stats);
 ```
 
 ### Diff 2 CSV files and produce a TSV file
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    output: {
-        stream: './temp/delta.tsv',
-        delimiter: '\t',
-    },
     keyFields: ['id'],
+}).to({
+    stream: './temp/delta.tsv',
+    delimiter: '\t',
 });
-const stats = differ.execute();
 console.log(stats);
 ```
 
 ### Diff one CSV and one TSV and produce a JSON file
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: {
         stream: './tests/b.tsv',
         delimiter: '\t',
     },
-    output: {
-        stream: './temp/delta.tsv',
-        format: 'json',
-    },
     keyFields: ['id'],
+}).to({
+    stream: './temp/delta.tsv',
+    format: 'json',
 });
-const stats = differ.execute();
 console.log(stats);
 ```
 
 ### Diff two string arrays and enumerate the changes
 
 ```Typescript
-import { Differ, ArrayInputStream } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff, ArrayInputStream } from 'tabular-data-differ';
+const differ = diff({
     oldSource: {
         stream: new ArrayInputStream([
             'id,name',
@@ -175,29 +165,26 @@ const differ = new Differ({
             '3,sarah',
         ]),
     },
-    output: 'null',
     keyFields: ['id'],
 });
 console.log('headers:', differ.getHeaders());
-for (const change of differ.enumerate()) {
+for (const change of differ) {
     console.log(change);
 }
-console.log('stats:', differ.stats);
+console.log('stats:', differ.getStats());
 ```
 
 ### Diff 2 CSV files on the console and ignore deleted rows
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    output: {
-        filter: (comparison) => comparison.status !== 'deleted',
-    }
     keyFields: ['id'],
+}).to({
+    filter: (rowDiff) => rowDiff.status !== 'deleted',
 });
-const stats = differ.execute();
 console.log(stats);
 ```
 
@@ -206,8 +193,8 @@ console.log(stats);
 If we assume that the 4th column (row[3]) contains such a category:
 
 ```Typescript
-import { Differ } from 'tabular-data-differ';
-const differ = new Differ({
+import { diff } from 'tabular-data-differ';
+const stats = diff({
     oldSource: {
         stream: './tests/a.csv',
         filter: row => ['cat1', 'cat2', 'cat3'].includes(row[3]),
@@ -217,8 +204,7 @@ const differ = new Differ({
         filter: row => ['cat1', 'cat2', 'cat3'].includes(row[3]),
     },
     keyFields: ['id'],
-});
-const stats = differ.execute();
+}).to('console');
 console.log(stats);
 ```
 
@@ -233,7 +219,49 @@ format   | no     | csv         | either an existing format (csv or json) or a f
 delimiter| no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
 filter   | no     |             | a filter to allow or reject the input rows.
 
-### Output options
+
+### Differ options
+
+Name            |Required|Default value|Description
+----------------|--------|-------------|-----------
+oldSource       | yes    |             | either a string filename or a SourceOptions
+newSource       | yes    |             | either a string filename or a SourceOptions
+keyFields       | yes    |             | the list of columns that form the primary key. This is required for comparing the rows.
+includedFields  | no     |             | the list of columns to keep from the input files. If not specified, all columns are selected.
+excludedFields  | no     |             | the list of columns to exclude from the input files.
+descendingOrder | no     | false       | specifies if the input files are in descending order.
+
+### diff function
+
+Creates a Differ object from the specified DifferOptions.
+
+### Differ methods
+
+#### open
+
+Initiates the opening of the input streams (old, new) and reads the headers.
+
+#### close
+
+Closes all open streams.
+
+#### getHeaders
+
+Returns the current column names. This will open the streams if it wasn't already done.
+
+#### getStats
+
+Returns the currents stats. There is no side effect.
+
+#### to
+
+Initiates the comparison between the old and new sources and sends the diffs to the specified output.
+
+This returns the change stats once completed.
+
+The options parameter can be either a standard output (console, null), a string filename or an OutputOptions.
+
+#### OutputOptions
 
 Name         |Required|Default value|Description
 -------------|--------|-------------|-----------
@@ -246,53 +274,18 @@ keepSameRows | no     | false       | specifies if the output should alsol conta
 changeLimit  | no     |             | specifies a maximum number of differences that should be outputted.
 labels       | no     |             | a dictionary of key/value that allows to add custom metadata to the generated file.
 
-### Differ options
 
-Name            |Required|Default value|Description
-----------------|--------|-------------|-----------
-oldSource       | yes    |             | either a string filename or a SourceOptions
-newSource       | yes    |             | either a string filename or a SourceOptions
-output          | no     | console     | either a standard output (console, null), a string filename or an OutputOptions
-keyFields       | yes    |             | the list of columns that form the primary key. This is required for comparing the rows.
-includedFields  | no     |             | the list of columns to keep from the input files. If not specified, all columns are selected.
-excludedFields  | no     |             | the list of columns to exclude from the input files.
-descendingOrder | no     | false       | specifies if the input files are in descending order.
+#### iterator
 
-### Differ methods
-
-#### open
-
-Initiate the opening of all streams (old, new and output) and reads the headers.
-
-#### close
-
-closes all open streams.
-
-#### getHeaders
-
-Returns the current column names. This will open the streams if it wasn't already done.
-
-#### getStats
-
-Returns the currents stats. There is no side effect.
-
-#### execute
-
-Initiates the comparison between the old and new sources and produces an output.
-
-This returns the change stats once completed.
-
-#### enumerate
-
-Iterator allowing to traverse the changes between the old and new sources.
+Enumerates the changes between the old and new sources.
 
 # Development
 
 ## Install
 
 ```shell
-git clone ...
-cd ...
+git clone git@github.com:livetocode/tabular-data-differ.git
+cd tabular-data-differ
 npm i
 ```
 

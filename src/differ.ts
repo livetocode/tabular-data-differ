@@ -407,12 +407,16 @@ export interface OutputOptions {
 export interface DifferOptions {
     oldSource: Filename | SourceOptions; 
     newSource: Filename | SourceOptions; 
-    output?: 'console' | 'null' | Filename | OutputOptions; 
     keyFields: string[];
     includedFields?: string[];
     excludedFields?: string[];
     descendingOrder?: boolean;
 }
+
+export function diff(options: DifferOptions): Differ {
+    return new Differ(options);
+}
+
 
 function createInputStream(options: SourceOptions): InputStream {
     if (typeof options.stream === 'string') {
@@ -485,14 +489,14 @@ function createOutputStream(options: OutputOptions): OutputStream {
     return new ConsoleOutputStream();    
 }
 
-function createOutput(value?: 'console' | 'null' | Filename | OutputOptions): { 
+function createOutput(value: 'console' | 'null' | Filename | OutputOptions): { 
     writer: StreamWriter, 
     filter?: RowDiffFilter,
     keepSameRows?: boolean, 
     changeLimit?: number,
     labels?: Record<string, string>;
 } {
-    if (value === 'console' || value === undefined) {
+    if (value === 'console') {
         return { writer: new CsvStreamWriter({ stream: new ConsoleOutputStream() }) };
     }
     if (value === 'null') {
@@ -517,11 +521,6 @@ export class Differ {
     private oldRowFilter?: RowFilter;
     private newReader: StreamReader;
     private newRowFilter?: RowFilter;
-    private outputWriter: StreamWriter;
-    private outputFilter?: RowDiffFilter;
-    private outputLabels?: Record<string, string>;
-    private keepSameRows?: boolean;
-    private changeLimit?: number;
     private comparer: RowComparer = defaultRowComparer;
     private oldHeaders: Row = [];
     private newHeaders: Row = [];
@@ -538,12 +537,6 @@ export class Differ {
         const newSource = createSource(options.newSource);
         this.newReader = newSource.reader;
         this.newRowFilter = newSource.filter;
-        const output = createOutput(options.output);
-        this.outputWriter = output.writer;
-        this.outputFilter = output.filter;
-        this.outputLabels = output.labels;
-        this.keepSameRows = output.keepSameRows;
-        this.changeLimit = output.changeLimit;
         this.comparer = options.descendingOrder === true ? 
                             invertRowComparer(defaultRowComparer) : 
                             defaultRowComparer;
@@ -556,23 +549,17 @@ export class Differ {
             this.oldReader.open();
             this.newReader.open();
             this.extractHeaders();
-            this.outputWriter.open();
-            this.outputWriter.writeHeader({
-                columns: this.headers.map(x => x.name),
-                labels: this.outputLabels,
-            });
         }
     }
     
     close(): void {
         if (this.isOpen) {
-            this.outputWriter.close();
             this.newReader.close();
             this.oldReader.close();
             this.isOpen = false;
         }
-    }   
-    
+    }
+
     getHeaders(): string[] {
         if (this.headers.length === 0) {
             this.open();
@@ -584,16 +571,35 @@ export class Differ {
         return this.stats;
     }
 
-    execute(): DiffStats {
-        for (const res of this.iterate()) {
-            if (typeof this.changeLimit === 'number' && this.stats.totalChanges >= this.changeLimit) {
-                break;
-            }
+    to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
+        const output = createOutput(options);
+        const columns = this.getHeaders();
+        output.writer.open();
+        try {
+            output.writer.writeHeader({
+                columns,
+                labels: output.labels,
+            });
+            for (const rowDiff of this) {
+                let canWriteDiff = output.keepSameRows === true || rowDiff.status !== 'same';
+                if (canWriteDiff && output.filter) { 
+                    canWriteDiff = output.filter(rowDiff);
+                }
+                if (canWriteDiff) { 
+                    output.writer.writeDiff(rowDiff);
+                }
+                if (typeof output.changeLimit === 'number' && this.stats.totalChanges >= output.changeLimit) {
+                    break;
+                }
+            }    
+            output.writer.writeFooter({ stats: this.stats });
+        } finally {
+            output.writer.close();
         }
         return this.stats;
     }
-
-    *iterate() {
+    
+    *[Symbol.iterator]() {
         this.open();
         try {
             let pairProvider: RowPairProvider = () => this.getNextPair();
@@ -609,11 +615,8 @@ export class Differ {
 
                 const res = this.evalPair(pair);
                 this.stats.add(res);
+                yield res;    
 
-                if (this.canWriteDiff(res)) { 
-                    this.outputWriter.writeDiff(res);
-                    yield res;    
-                }
                 if (res.delta === 0) {
                     pairProvider = () => this.getNextPair();
                 } else if (res.delta > 0) {
@@ -625,17 +628,8 @@ export class Differ {
         } finally {
             this.oldReader.readFooter();
             this.newReader.readFooter();
-            this.outputWriter.writeFooter({ stats: this.stats });
             this.close();
         }
-    }
-
-    private canWriteDiff(rowDiff: RowDiff): boolean {
-        let result = this.keepSameRows === true || rowDiff.status !== 'same';
-        if (result && this.outputFilter) { 
-            result = this.outputFilter(rowDiff);
-        }
-        return result;
     }
 
     private extractHeaders() {

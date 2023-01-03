@@ -1,6 +1,6 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, Differ, parseCsvLine, RowHeader, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
+import { defaultRowComparer, diff, Differ, parseCsvLine, RowHeader, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
 
 class FakeOutputWriter implements StreamWriter{
     public header?: StreamWriterHeader;
@@ -20,16 +20,16 @@ class FakeOutputWriter implements StreamWriter{
     close(): void {}
 }
 
-type DiffOptions = Omit<DifferOptions, "oldSource" | "newSource" | "output" | "outputWriter"> & {
+type DiffOptions = Omit<DifferOptions, "oldSource" | "newSource"> & {
     oldLines: string[],
     newLines: string[], 
     keepSameRows?: boolean,
     changeLimit?: number,
 };
 
-function diff(options: DiffOptions): FakeOutputWriter {
+function diffStrings(options: DiffOptions): FakeOutputWriter {
     const result = new FakeOutputWriter();
-    const differ = new Differ({
+    diff({
         ...options,
         oldSource: { 
             stream: new ArrayInputStream(options.oldLines) 
@@ -37,13 +37,11 @@ function diff(options: DiffOptions): FakeOutputWriter {
         newSource: {
             stream: new ArrayInputStream(options.newLines),
         },
-        output: {
-            format: (_options) => result,
-            keepSameRows: options.keepSameRows,
-            changeLimit: options.changeLimit,
-        }
+    }).to({
+        format: (_options) => result,
+        keepSameRows: options.keepSameRows,
+        changeLimit: options.changeLimit,
     });
-    differ.execute();
     return result;
 }
 
@@ -208,7 +206,7 @@ describe('differ', () => {
     });
     describe('validation errors', () => {
         test('should detect invalid ordering in ascending mode', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -225,7 +223,7 @@ describe('differ', () => {
             })).toThrowError('Expected rows to be in ascending order in new source but received: previous=3,dave,44, current=2,rachel,22');
         });        
         test('should detect invalid ordering in descending mode', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '3,dave,44',
@@ -243,14 +241,13 @@ describe('differ', () => {
             })).toThrowError('Expected rows to be in descending order in new source but received: previous=1,john,33, current=2,rachel,22');            
         });        
         test('should be able to execute twice', () => {
-            const differ = new Differ({
+            const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: 'null',
                 keyFields: ['id'],
             });
-            const stats1 = differ.execute();
-            const stats2 = differ.execute();
+            const stats1 = differ.to('null');
+            const stats2 = differ.to('null');
             expect(stats1.totalChanges).toBe(6);
             expect(stats1).toEqual(stats2);
         });         
@@ -264,7 +261,7 @@ describe('differ', () => {
             }
         });       
         test('should have headers in old source', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                 ],
                 newLines: [
@@ -274,7 +271,7 @@ describe('differ', () => {
             })).toThrowError('Expected to find headers in old source');
         });
         test('should have headers in new source', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
@@ -284,7 +281,7 @@ describe('differ', () => {
             })).toThrowError('Expected to find headers in new source');            
         });
         test('should match headers in both sources', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
@@ -297,7 +294,7 @@ old=ID,NAME,AGE
 new=ID,TITLE,AGE`);            
         });
         test('should find keys in old headers', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                     'CODE,NAME,AGE',
                 ],
@@ -308,7 +305,7 @@ new=ID,TITLE,AGE`);
             })).toThrowError(`Could not find key 'ID' in old headers: CODE,NAME,AGE`);            
         });
         test('should find keys in new headers', () => {
-            expect(() => diff({
+            expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     'a1,a,33',
@@ -323,7 +320,7 @@ new=ID,TITLE,AGE`);
     });
     describe('changes', () => {        
         test('both files are empty', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
@@ -345,7 +342,7 @@ new=ID,TITLE,AGE`);
             });
         });        
         test('old is empty', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
@@ -382,7 +379,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('new is empty', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -419,7 +416,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('same and do not keep same rows', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -447,7 +444,7 @@ new=ID,TITLE,AGE`);
             });
         });
         test('same and keep same rows', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -495,7 +492,7 @@ new=ID,TITLE,AGE`);
             });
         });
         test('same with reordered columns', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -523,7 +520,7 @@ new=ID,TITLE,AGE`);
             });
         });        
         test('same with excluded columns', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -552,7 +549,7 @@ new=ID,TITLE,AGE`);
             });
         });        
         test('same with included columns', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -581,7 +578,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('1 modified', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -614,7 +611,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('all modified', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,30',
@@ -661,7 +658,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('1 modified with reordered columns', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -694,7 +691,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('1 modified with excluded columns', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -728,7 +725,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('1 modified with included columns', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -762,7 +759,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('1 deleted', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -794,7 +791,7 @@ new=ID,TITLE,AGE`);
             });
         });    
         test('1 added', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -826,7 +823,7 @@ new=ID,TITLE,AGE`);
             });
         });            
         test('only new rows and previous rows have been deleted', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -884,7 +881,7 @@ new=ID,TITLE,AGE`);
             });
         });            
         test('same, modified, added and deleted', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -938,7 +935,7 @@ new=ID,TITLE,AGE`);
             });
         });            
         test('same, modified, added and deleted, in descending order', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '3,dave,44',
@@ -993,7 +990,7 @@ new=ID,TITLE,AGE`);
             });
         });                    
         test('keep first 2 changes', () => {
-            const res = diff({
+            const res = diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -1043,15 +1040,14 @@ new=ID,TITLE,AGE`);
         });
         test('should work with real source files (CSV)', () => {
             const output = new FakeOutputWriter();
-            const differ = new Differ({
+            const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: {
-                    format: (_options) => output,
-                },
                 keyFields: ['id'],
             });
-            differ.execute();
+            differ.to({
+                format: (_options) => output,
+            });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
             expect(output.diffs).toEqual([
                 { delta: -1, status: 'deleted', oldRow: [ '01', 'a1', 'b1', 'c1' ] },
@@ -1087,12 +1083,11 @@ new=ID,TITLE,AGE`);
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
-                output: {
-                    format: (_options) => output,
-                },
                 keyFields: ['id'],
             });
-            differ.execute();
+            differ.to({
+                format: (_options) => output,
+            });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
             expect(output.diffs).toEqual([
                 { delta: -1, status: 'deleted', oldRow: [ '01', 'a1', 'b1', 'c1' ] },
@@ -1118,13 +1113,11 @@ new=ID,TITLE,AGE`);
             });
         });
         test('should produce a csv file', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: './output/files/output.csv',
                 keyFields: ['id'],
-            });
-            const stats = differ.execute();
+            }).to('./output/files/output.csv');
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1145,7 +1138,7 @@ added,11,a11,b11,c11
 `);
         });
         test('should produce a tsv file', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: {
                     stream: './tests/a.tsv',
                     delimiter: '\t',
@@ -1154,13 +1147,11 @@ added,11,a11,b11,c11
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
-                output: {
-                    stream: './output/files/output.tsv',
-                    delimiter: '\t',
-                },
                 keyFields: ['id'],
+            }).to({
+                stream: './output/files/output.tsv',
+                delimiter: '\t',
             });
-            const stats = differ.execute();
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1181,7 +1172,7 @@ added	11	a11	b11	c11
 `);
         });
         test('should produce a tsv file from a csv and a tsv', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: {
                     stream: './tests/a.csv',
                 },
@@ -1189,13 +1180,11 @@ added	11	a11	b11	c11
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
-                output: {
-                    stream: './output/files/output.tsv',
-                    delimiter: '\t',
-                },
                 keyFields: ['id'],
+            }).to({
+                stream: './output/files/output.tsv',
+                delimiter: '\t',
             });
-            const stats = differ.execute();
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1216,16 +1205,14 @@ added	11	a11	b11	c11
 `);
         });
         test('should produce a json file', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: {
-                    stream: './output/files/output.json',
-                    format: 'json',
-                },
                 keyFields: ['id'],
+            }).to({
+                stream: './output/files/output.json',
+                format: 'json',
             });
-            const stats = differ.execute();
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1247,17 +1234,15 @@ added	11	a11	b11	c11
 `);
         });    
         test('should produce a json file with old and new values', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: {
-                    stream: './output/files/output.json',
-                    format: 'json',
-                    keepOldValues: true,
-                },
                 keyFields: ['id'],
+            }).to({
+                stream: './output/files/output.json',
+                format: 'json',
+                keepOldValues: true,
             });
-            const stats = differ.execute();
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1279,20 +1264,18 @@ added	11	a11	b11	c11
 `);
         });    
         test('should produce a json file with labels in the header', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: {
-                    stream: './output/files/output.json',
-                    format: 'json',
-                    labels: {
-                        generatedAt: '2023-01-02T01:21:57Z',
-                        source: 'Some source...'
-                    }
-                },
                 keyFields: ['id'],
+            }).to({
+                stream: './output/files/output.json',
+                format: 'json',
+                labels: {
+                    generatedAt: '2023-01-02T01:21:57Z',
+                    source: 'Some source...'
+                }
             });
-            const stats = differ.execute();
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1314,13 +1297,11 @@ added	11	a11	b11	c11
 `);
         });    
         test('should display output on the console', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: 'console',
                 keyFields: ['id'],
-            });
-            const stats = differ.execute();
+            }).to('console');
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1332,13 +1313,11 @@ added	11	a11	b11	c11
             });
         });        
         test('should not produce anything but stats', () => {
-            const differ = new Differ({
+            const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                output: 'null',
                 keyFields: ['id'],
-            });
-            const stats = differ.execute();
+            }).to('null');
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
