@@ -188,23 +188,20 @@ const stats = diff({
 console.log(stats);
 ```
 
-### Diff 2 CSV files on the console but select only some categories of input rows
-
-If we assume that the 4th column (row[3]) contains such a category:
+### Diff 2 CSV files on the console but select only some categories of rows
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
-    oldSource: {
-        stream: './tests/a.csv',
-        filter: row => ['cat1', 'cat2', 'cat3'].includes(row[3]),
-    },
-    newSource: {
-        stream: './tests/b.csv',
-        filter: row => ['cat1', 'cat2', 'cat3'].includes(row[3]),
-    },
+const differ = diff({
+    oldSource: './tests/a.csv',
+    newSource: './tests/b.csv',
     keyFields: ['id'],
-}).to('console');
+});
+const catIdx = differ.getColumns().indexOf('CATEGORY');
+const stats = differ.to({
+    stream: 'console',
+    filter: (rowDiff) => rowDiff.newRow && ['cat1', 'cat2', 'cat3'].includes(rowDiff.newRow[catIdx]),
+});
 console.log(stats);
 ```
 
@@ -273,9 +270,115 @@ This returns the change stats once completed.
 
 The options parameter can be either a standard output (console, null), a string filename or an OutputOptions.
 
+Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
+
 #### iterator
 
 Enumerates the changes between the old and new sources.
+
+Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
+
+### CSV output format
+
+This is a standard CSV format, using the specified character for delimiting fields or the default one (comma).
+
+Note that there is an additional column named DIFF_STATUS that will tell if the row was added, deleted, modified.
+
+```csv
+DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+```
+
+Note that if you set the "OutputOptions.keepOldValues" property to true, you'll get additional columns prefixed by 'OLD_':
+```csv
+DIFF_STATUS,id,a,b,c,OLD_id,OLD_a,OLD_b,OLD_c
+deleted,,,,,01,a1,b1,c1
+modified,04,aa4,bb4,cc4,04,a4,b4,c4
+deleted,,,,,05,a5,b5,c5
+deleted,,,,,06,a6,b6,c6
+added,10,a10,b10,c10,,,,
+added,11,a11,b11,c11,,,,
+```
+
+### JSON output format
+
+The schema is made of 3 parts:
+- the header
+- the items
+- the footer
+
+```json
+{
+    "header": {},
+    "items": [...],
+    "footer": {}
+}
+```
+
+#### Header
+
+The header contains a mandatory list of columns and an optional dictionary of key/value pairs named labels.
+
+```json
+{
+    "columns": ["col1", "col2", "col3"]
+}
+```
+
+or
+
+```json
+{
+    "columns": ["col1", "col2", "col3"],
+    "labels": {
+        "key1": "val1",
+        "key2": "val2",
+    }
+}
+```
+
+#### Items
+
+A list of DiffRow objects, which can have two distinct layouts based on the "OutputOptions.keepOldValues" property.
+
+##### keepOldValues is false or undefined
+```json
+{"status":"deleted","data":["01","a1","b1","c1"]},
+{"status":"same","data":["02","a2","b2","c2"]},
+{"status":"modified","data":["04","aa4","bb4","cc4"]},
+{"status":"added","data":["10","a10","b10","c10"]},
+```
+##### keepOldValues is true
+
+```json
+{"status":"deleted","old":["01","a1","b1","c1"]},
+{"status":"same","new":["02","a2","b2","c2"],"old":["02","a2","b2","c2"]},
+{"status":"modified","new":["04","aa4","bb4","cc4"],"old":["04","a4","b4","c4"]},
+{"status":"added","new":["10","a10","b10","c10"]},
+```
+
+#### Footer
+
+The footer will simply contain a stats section summarizing the types of changes in the file.
+
+```json
+{
+    "stats" : {
+        "totalComparisons": 11,
+        "totalChanges": 6,
+        "changePercent": 54.55,
+        "added": 2,
+        "deleted": 3,
+        "modified": 1,
+        "same": 5
+    }
+}
+```
 
 # Development
 

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader } from './differ';
+import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader, UnorderedStreamsError } from './differ';
 
 class FakeOutputWriter implements StreamWriter{
     public header?: StreamWriterHeader;
@@ -238,7 +238,7 @@ describe('differ', () => {
                 ],
                 keyFields: ['ID'],
                 descendingOrder: true,
-            })).toThrowError('Expected rows to be in descending order in new source but received: previous=1,john,33, current=2,rachel,22');            
+            })).toThrowError(new UnorderedStreamsError('Expected rows to be in descending order in new source but received: previous=1,john,33, current=2,rachel,22'));
         });        
         test('should be able to execute twice', () => {
             const differ = diff({
@@ -1135,6 +1135,34 @@ deleted,05,a5,b5,c5
 deleted,06,a6,b6,c6
 added,10,a10,b10,c10
 added,11,a11,b11,c11
+`);
+        });
+        test('should produce a csv file with old and new values', () => {
+            const stats = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keyFields: ['id'],
+            }).to({ 
+                stream: './output/files/output.csv',
+                keepOldValues: true,
+            });
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c,OLD_id,OLD_a,OLD_b,OLD_c
+deleted,,,,,01,a1,b1,c1
+modified,04,aa4,bb4,cc4,04,a4,b4,c4
+deleted,,,,,05,a5,b5,c5
+deleted,,,,,06,a6,b6,c6
+added,10,a10,b10,c10,,,,
+added,11,a11,b11,c11,,,,
 `);
         });
         test('should produce a tsv file', () => {

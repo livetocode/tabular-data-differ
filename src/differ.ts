@@ -1,9 +1,13 @@
 import fs from 'fs';
 import lineByLine from 'n-readlines';
 
+//TODO: Differ should allow only one iteration because of header caching.
 //TODO: make stream operations async
 //TODO: allow to specify a custom comparer for each specified key
 // keyFields: ["id", {name: "version", comparer: NumberComparer, descendingOrder: true}]
+
+export class UnorderedStreamsError extends Error {
+}
 
 export type Row = string[];
 
@@ -74,7 +78,6 @@ export interface InputStream {
 export interface StreamReaderOptions {
     stream: InputStream;
     delimiter?: string;
-    filter?: RowFilter;
 }
 
 export interface StreamReaderHeader {
@@ -491,7 +494,6 @@ function createStreamReader(options: SourceOptions): StreamReader {
     const readerOptions: StreamReaderOptions = { 
         stream, 
         delimiter: options.delimiter,
-        filter: options.filter,
     };
     if (options.format === 'csv') {
         return new CsvStreamReader(readerOptions);
@@ -657,7 +659,10 @@ export class Differ {
     /**
      * Iterates over the changes and sends them to the submitted output.
      * @param options a standard ouput such as console or null, a string filename or a custom OutputOptions.
-     * @returns the change stats once all the changes have been processed.
+     * @returns the change stats once all the changes have been processed. 
+     * Note that the stats might be different from getStats() when there is a filter in the output options, 
+     * as the differ stats are updated by the iterator which doesn't have any filter.
+     * @throws {UnorderedStreamsError}
      * @example
      * import { diff } from 'tabular-data-differ';
      * const stats = diff({
@@ -668,6 +673,7 @@ export class Differ {
      * console.log(stats);
      */
     to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
+        const stats = new DiffStats();
         const columns = this.getColumns();
         const output = createOutput(options);
         output.writer.open();
@@ -677,11 +683,12 @@ export class Differ {
                 labels: output.labels,
             });
             for (const rowDiff of this) {
-                let canWriteDiff = output.keepSameRows === true || rowDiff.status !== 'same';
-                if (canWriteDiff && output.filter) { 
-                    canWriteDiff = output.filter(rowDiff);
+                let isValidDiff = output.filter?.(rowDiff) ?? true;
+                if (isValidDiff) {
+                    stats.add(rowDiff);
                 }
-                if (canWriteDiff) { 
+                let canWriteDiff = output.keepSameRows === true || rowDiff.status !== 'same';
+                if (isValidDiff && canWriteDiff) { 
                     output.writer.writeDiff(rowDiff);
                 }
                 if (typeof output.changeLimit === 'number' && this.stats.totalChanges >= output.changeLimit) {
@@ -692,12 +699,13 @@ export class Differ {
         } finally {
             output.writer.close();
         }
-        return this.stats;
+        return stats;
     }
     
     /**
      * An iterator emitting changes between two input streams (old and new).
-     * @yields RowDiff
+     * @yields {RowDiff}
+     * @throws {UnorderedStreamsError}
      * @example
      * import { diff, ArrayInputStream } from 'tabular-data-differ';
      * const differ = diff({
@@ -856,13 +864,11 @@ export class Differ {
             const oldDelta = this.comparer(this.keys, previous, current);
             if (this.options.descendingOrder === true) {
                 if (oldDelta > 0) {
-                    // console.log(`Expected rows to be in descending order in ${source}  source but received: previous=${previous}, current=${current}`);
-                    throw new Error(`Expected rows to be in descending order in ${source} source but received: previous=${previous}, current=${current}`);
+                    throw new UnorderedStreamsError(`Expected rows to be in descending order in ${source} source but received: previous=${previous}, current=${current}`);
                 }        
             } else {
                 if (oldDelta > 0) {
-                    // console.log(`Expected rows to be in ascending order in ${source}  source but received: previous=${previous}, current=${current}`);
-                    throw new Error(`Expected rows to be in ascending order in ${source} source but received: previous=${previous}, current=${current}`);
+                    throw new UnorderedStreamsError(`Expected rows to be in ascending order in ${source} source but received: previous=${previous}, current=${current}`);
                 }        
             }
         }
