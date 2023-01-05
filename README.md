@@ -226,14 +226,20 @@ console.log(stats);
 ```Typescript
 import { diff } from 'tabular-data-differ';
 const ctx = diff({
-    oldSource: './tests/a.csv',
-    newSource: './tests/b.csv',
-    keys: ['id'],
+    oldSource: './tests/c.csv',
+    newSource: './tests/d.csv',
+    keys: [
+        'code',
+        {
+            name: 'version',
+            comparer: 'number',
+        }
+    ],
 }).start();
 const catIdx = ctx.columns.indexOf('CATEGORY');
 const stats = ctx.to({
     stream: 'console',
-    filter: (rowDiff) => rowDiff.newRow && ['cat1', 'cat2', 'cat3'].includes(rowDiff.newRow[catIdx]),
+    filter: (rowDiff) => ['Fruit', 'Meat'].includes(rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]),
 });
 console.log(stats);
 ```

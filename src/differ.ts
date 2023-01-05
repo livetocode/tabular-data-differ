@@ -912,16 +912,14 @@ export class DifferContext {
 
     private evalPair(pair: RowPair): RowDiff {
         const delta = this.comparer(this.keys, pair.oldRow, pair.newRow);
+        const newRow = this.normalizeNewRow(pair.newRow);
+        const oldRow = this.normalizeOldRow(pair.oldRow);
         if (delta === 0) {
             const areSame = this.comparer(this.columnsWithoutKeys, pair.oldRow, pair.newRow) === 0;
-            const newRow = this.normalizeNewRow(pair.newRow);
-            const oldRow = this.normalizeOldRow(pair.oldRow);
             return { delta, status: areSame ? 'same' : 'modified', oldRow, newRow };
         } else if (delta < 0) {
-            const oldRow = this.normalizeOldRow(pair.oldRow);
             return { delta, status: 'deleted', oldRow };
         }
-        const newRow = this.normalizeNewRow(pair.newRow);
         return { delta, status: 'added', newRow };        
     }
 
@@ -1072,16 +1070,6 @@ export function defaultRowComparer(columns: Column[], a? : Row, b?: Row): number
         }
     }
     return 0;
-}
-
-export function invertRowComparer(comparer: RowComparer): RowComparer {
-    return (keys, a, b) => {
-        let delta = comparer(keys, a, b);
-        if (delta !== 0) {
-            delta = - delta;
-        }
-        return delta;
-    };
 }
 
 export function roundDecimals(value: number, decimals: number) {

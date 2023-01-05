@@ -1,0 +1,14 @@
+CODE,VERSION,NAME,CATEGORY,PRICE
+apple,1,Apple,Fruit,0.2
+apple,2,Apple,Fruit,0.3
+banana,1,Bannana,Fruit,0.25
+banana,2,Banana,Fruit,0.27
+banana,3,Banana,Fruit,0.3
+beef,1,Beef,Meat,10
+pear,1,Pear,Fruit,0.22
+pear,2,Pear,Fruit,0.25
+potato,1,Potato,Vegetable,0.1
+potato,2,Potato,Vegetable,0.2
+potato,3,Potato,Vegetable,0.3
+potato,11,Potato,Vegetable,0.11
+potato,12,Potato,Vegetable,0.12

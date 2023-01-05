@@ -1,6 +1,6 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, DiffStats, OutputStream, StreamWriterFooter, StreamWriterHeader, UnorderedStreamsError } from './differ';
+import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, StreamWriterFooter, StreamWriterHeader, UnorderedStreamsError, NullOutputStream, CsvStreamReader, CsvStreamWriter } from './differ';
 
 class FakeOutputWriter implements StreamWriter{
     public header?: StreamWriterHeader;
@@ -346,6 +346,16 @@ describe('differ', () => {
             expect(ctx2.isOpen).toBeFalsy();
             expect(diffs2.length).toBe(11);
             expect(diffs2).toEqual(diffs);
+        });
+        test('should not be able to read input streams after a close', () => {
+            const stream = new FileInputStream('./tests/a.csv');
+            stream.open();
+            const header = stream.readLine();
+            expect(header).toBe('id,a,b,c');
+            stream.close();
+            expect(() => {
+                stream.readLine();
+            }).toThrowError('FileInputStream "./tests/a.csv" is not open');
         });
     });
     describe('changes', () => {        
@@ -752,6 +762,66 @@ describe('differ', () => {
                 deleted: 0,
                 same: 2,
                 changePercent: 33.33,
+            });
+        });    
+        test('1 added with excluded columns', () => {
+            // this test will also help boost code coverage in normalizeOldRow
+            const res = diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                ],
+                keys: ['ID'],
+                excludedColumns: ['AGE'],
+            });
+            expect(res.header?.columns).toEqual(['ID', 'NAME']);
+            expect(res.diffs).toEqual([
+                { delta: 1, status: 'added', newRow: [ '2', 'rachel' ] }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 2,
+                totalChanges: 1,
+                added: 1,
+                modified: 0,
+                deleted: 0,
+                same: 1,
+                changePercent: 50,
+            });
+        });    
+        test('1 deleted with excluded columns', () => {
+            // this test will also help boost code coverage in normalizeNewRow
+            const res = diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                ],
+                keys: ['ID'],
+                excludedColumns: ['AGE'],
+            });
+            expect(res.header?.columns).toEqual(['ID', 'NAME']);
+            console.log(res.diffs)
+            console.log(res.footer?.stats)
+            expect(res.diffs).toEqual([
+                { delta: -1, status: 'deleted', oldRow: [ '2', 'rachel' ] }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 2,
+                totalChanges: 1,
+                added: 0,
+                modified: 0,
+                deleted: 1,
+                same: 1,
+                changePercent: 50,
             });
         });    
         test('1 modified with included columns', () => {
@@ -1295,10 +1365,14 @@ describe('differ', () => {
                     'pear,1,Pear,0.8',
                 ],
                 keys: [
-                    'CODE',
+                    { 
+                        name: 'CODE',
+                        comparer: 'string',
+                    },
                     {
                         name: 'VERSION',
                         comparer: 'number',
+                        order: 'ASC',
                     }
                 ],
                 keepSameRows: true,
@@ -1576,6 +1650,40 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });
+        test('should read/write CSV files with an explicit reader/writer', () => {
+            const stats = diff({
+                oldSource: {
+                    stream: './tests/a.csv',
+                    format: 'csv',
+                },
+                newSource: {
+                    stream: './tests/b.csv',
+                    format: (options) => new CsvStreamReader(options),
+                },
+                keys: ['id'],
+            }).to({
+                stream: new FileOutputStream('./output/files/output.csv'),
+                format: 'csv',
+            });
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
+        });
         test('should produce a csv file with old and new values', () => {
             const stats = diff({
                 oldSource: './tests/a.csv',
@@ -1763,6 +1871,39 @@ added	11	a11	b11	c11
 ], "footer": {"stats":{"totalComparisons":11,"totalChanges":6,"changePercent":54.55,"added":2,"deleted":3,"modified":1,"same":5}}}
 `);
         });    
+        test('should read a JSON input file', () => {
+            expect(()=> {
+            const stats = diff({
+                oldSource: {
+                    stream: './tests/a.json',
+                    format: 'json',
+                },
+                newSource: {
+                    stream: './tests/b.json',
+                    format: 'json',
+                },
+                keys: ['id'],
+            }).to('./output/files/output.csv');
+        }).toThrowError('not implemented');
+//             expect(stats).toEqual({
+//                 totalComparisons: 11,
+//                 totalChanges: 6,
+//                 changePercent: 54.55,
+//                 added: 2,
+//                 deleted: 3,
+//                 modified: 1,
+//                 same: 5        
+//             });
+//             const output = readAllText('./output/files/output.csv');
+//             expect(output).toBe(`DIFF_STATUS,id,a,b,c
+// deleted,01,a1,b1,c1
+// modified,04,aa4,bb4,cc4
+// deleted,05,a5,b5,c5
+// deleted,06,a6,b6,c6
+// added,10,a10,b10,c10
+// added,11,a11,b11,c11
+// `);
+        });        
         test('should display output on the console', () => {
             const stats = diff({
                 oldSource: './tests/a.csv',
@@ -1890,7 +2031,6 @@ added	11	a11	b11	c11
             });
             const stats = ctx.to('./output/files/output.csv');
             const output = readAllText('./output/files/output.csv');
-            console.log(output);
             expect(ctx.isOpen).toBeFalsy();
             expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
             expect(output).toBe(`DIFF_STATUS,id,a,b,c
@@ -1911,7 +2051,98 @@ added,11,a11,b11,c11
                 same: 5        
             });
             expect(ctx.stats).toEqual(stats);
-        });    
+        });
+        test('should be able to filter the output', () => {
+            const ctx = diff({
+                oldSource: './tests/c.csv',
+                newSource: './tests/d.csv',
+                keys: [
+                    'CODE',
+                    {
+                        name: 'VERSION',
+                        comparer: 'number',
+                    }
+                ],
+            }).start();
+            expect(ctx.isOpen).toBeTruthy();
+            expect(ctx.columns).toEqual(['CODE', 'VERSION', 'NAME', 'CATEGORY', 'PRICE']);
+            expect(ctx.stats).toEqual({
+                totalComparisons: 0,
+                totalChanges: 0,
+                changePercent: 0,
+                added: 0,
+                deleted: 0,
+                modified: 0,
+                same: 0
+            });
+            const catIdx = ctx.columns.indexOf('CATEGORY');
+            const stats = ctx.to({
+                stream: './output/files/output.csv',
+                filter: (rowDiff) => (rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]) !== 'Vegetable',
+                keepOldValues: true,
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(ctx.isOpen).toBeFalsy();
+            expect(ctx.columns).toEqual(['CODE', 'VERSION', 'NAME', 'CATEGORY', 'PRICE']);
+            console.log(output)
+            console.log(stats)
+            expect(output).toBe(`DIFF_STATUS,CODE,VERSION,NAME,CATEGORY,PRICE,OLD_CODE,OLD_VERSION,OLD_NAME,OLD_CATEGORY,OLD_PRICE
+added,apple,3,Apple,Fruit,0.4,,,,,
+modified,banana,1,Banana,Fruit,0.25,banana,1,Bannana,Fruit,0.25
+deleted,,,,,,banana,2,Banana,Fruit,0.27
+added,banana,4,Banana,Fruit,0.4,,,,,
+added,beef,2,Beef,Meat,11,,,,,
+added,pear,3,Pear,Fruit,0.35,,,,,
+`);
+            expect(ctx.stats).not.toEqual(stats);
+            expect(stats).toEqual({
+                totalComparisons: 12,
+                totalChanges: 6,
+                changePercent: 50,
+                added: 4,
+                deleted: 1,
+                modified: 1,
+                same: 6    
+            });
+        });            
+        test('should be able to get the columns and close the files', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).start();
+            expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
+            expect(ctx.isOpen).toBeTruthy();
+            ctx.close();
+            expect(ctx.isOpen).toBeFalsy();
+        });
+        test('should work with NullOutputStream', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                stream: new NullOutputStream(),
+            });
+        });
+        test('should work with explicit null output stream', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                stream: 'null',
+            });
+        });
+        test('should work with explicit null console stream', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                stream: 'console',
+            });
+        });
     });
 });
 
