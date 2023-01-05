@@ -25,7 +25,9 @@
   },
   "author": "Morgan Martinet",
   "license": "ISC",
-  "type": "module",
+  "engines": {
+    "node": ">=16.0.0"    
+  },
   "dependencies": {
     "n-readlines": "1.0.1"
   },
