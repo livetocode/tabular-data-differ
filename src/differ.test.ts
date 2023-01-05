@@ -252,10 +252,13 @@ describe('differ', () => {
                 newSource: './tests/b.csv',
                 keys: ['id'],
             });
-            const stats1 = differ.to('null');
-            const stats2 = differ.to('null');
+            const stats1 = differ.to('./output/files/output.csv');
+            const output1= readAllText('./output/files/output.csv');
+            const stats2 = differ.to('./output/files/output.csv');
+            const output2= readAllText('./output/files/output.csv');
             expect(stats1.totalChanges).toBe(6);
-            expect(stats1).toEqual(stats2);
+            expect(stats2).toEqual(stats1);
+            expect(output2).toEqual(output1);
         });         
         test('should not open output file twice', () => {
             const f = new FileOutputStream('./output/files/output.csv');
@@ -309,6 +312,40 @@ describe('differ', () => {
                 ],
                 keys: ['ID'],
             })).toThrowError(`Could not find key 'ID' in new stream`);            
+        });
+        test('should not allow calling diffs() twice', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).start();
+            const diffs = [...ctx.diffs()];
+            expect(diffs.length).toBe(11);
+            expect(ctx.isOpen).toBeFalsy();
+            expect(() => {
+                [...ctx.diffs()];
+            }).toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
+        });
+        test('should allow calling start() twice', () => {
+            const differ = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            });
+
+            const ctx = differ.start();
+            expect(ctx.isOpen).toBeTruthy();
+            const diffs = [...ctx.diffs()];
+            expect(diffs.length).toBe(11);
+            expect(ctx.isOpen).toBeFalsy();
+
+            const ctx2 = differ.start();
+            expect(ctx2.isOpen).toBeTruthy();
+            expect(ctx2).not.toBe(ctx);
+            const diffs2 = [...ctx2.diffs()];
+            expect(ctx2.isOpen).toBeFalsy();
+            expect(diffs2.length).toBe(11);
+            expect(diffs2).toEqual(diffs);
         });
     });
     describe('changes', () => {        
@@ -1757,7 +1794,124 @@ added	11	a11	b11	c11
                 modified: 1,
                 same: 5        
             });
-        });        
+        });
+        test('should be able to iterate over the diffs', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).start();
+            expect(ctx.isOpen).toBeTruthy();
+            expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
+            expect(ctx.stats).toEqual({
+                totalComparisons: 0,
+                totalChanges: 0,
+                changePercent: 0,
+                added: 0,
+                deleted: 0,
+                modified: 0,
+                same: 0
+            });
+            const diffs: RowDiff[] = [];
+            for (const rowDiff of ctx.diffs()) {
+                diffs.push(rowDiff);
+            }
+            expect(ctx.isOpen).toBeFalsy();
+            expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
+            expect(diffs).toEqual([
+                { delta: -1, status: 'deleted', oldRow: [ '01', 'a1', 'b1', 'c1' ] },
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '02', 'a2', 'b2', 'c2' ],
+                  newRow: [ '02', 'a2', 'b2', 'c2' ]
+                },
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '03', 'a3', 'b3', 'c3' ],
+                  newRow: [ '03', 'a3', 'b3', 'c3' ]
+                },
+                {
+                  delta: 0,
+                  status: 'modified',
+                  oldRow: [ '04', 'a4', 'b4', 'c4' ],
+                  newRow: [ '04', 'aa4', 'bb4', 'cc4' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '05', 'a5', 'b5', 'c5' ] },
+                { delta: -1, status: 'deleted', oldRow: [ '06', 'a6', 'b6', 'c6' ] },
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '07', 'a7', 'b7', 'c7' ],
+                  newRow: [ '07', 'a7', 'b7', 'c7' ]
+                },
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '08', 'a8', 'b8', 'c8' ],
+                  newRow: [ '08', 'a8', 'b8', 'c8' ]
+                },
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '09', 'a9', 'b9', 'c9' ],
+                  newRow: [ '09', 'a9', 'b9', 'c9' ]
+                },
+                { delta: 1, status: 'added', newRow: [ '10', 'a10', 'b10', 'c10' ] },
+                { delta: 1, status: 'added', newRow: [ '11', 'a11', 'b11', 'c11' ] }
+            ]);
+            expect(ctx.stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+        });    
+        test('should be able to get the column names before invoking the "to" method', () => {
+            const ctx = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).start();
+            expect(ctx.isOpen).toBeTruthy();
+            expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
+            expect(ctx.stats).toEqual({
+                totalComparisons: 0,
+                totalChanges: 0,
+                changePercent: 0,
+                added: 0,
+                deleted: 0,
+                modified: 0,
+                same: 0
+            });
+            const stats = ctx.to('./output/files/output.csv');
+            const output = readAllText('./output/files/output.csv');
+            console.log(output);
+            expect(ctx.isOpen).toBeFalsy();
+            expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            expect(ctx.stats).toEqual(stats);
+        });    
     });
 });
 

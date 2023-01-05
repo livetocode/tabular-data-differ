@@ -1,6 +1,6 @@
 # Summary
 
-A very efficient library for diffing two sorted streams of tabular data, such as CSV files.
+A very efficient library for diffing two **sorted** streams of tabular data, such as CSV files.
 
 Keywords:
 - table
@@ -183,7 +183,7 @@ console.log(stats);
 
 ```Typescript
 import { diff, ArrayInputStream } from 'tabular-data-differ';
-const differ = diff({
+const ctx = diff({
     oldSource: {
         stream: new ArrayInputStream([
             'id,name',
@@ -199,12 +199,12 @@ const differ = diff({
         ]),
     },
     keys: ['id'],
-});
-console.log('columns:', differ.getColumns());
-for (const rowDiff of differ) {
+}).start();
+console.log('columns:', ctx.columns);
+for (const rowDiff of ctx.diffs()) {
     console.log(rowDiff);
 }
-console.log('stats:', differ.getStats());
+console.log('stats:', ctx.stats);
 ```
 
 ### Diff 2 CSV files on the console and ignore deleted rows
@@ -225,13 +225,13 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const differ = diff({
+const ctx = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: ['id'],
-});
-const catIdx = differ.getColumns().indexOf('CATEGORY');
-const stats = differ.to({
+}).start();
+const catIdx = ctx.columns.indexOf('CATEGORY');
+const stats = ctx.to({
     stream: 'console',
     filter: (rowDiff) => rowDiff.newRow && ['cat1', 'cat2', 'cat3'].includes(rowDiff.newRow[catIdx]),
 });
@@ -287,21 +287,11 @@ Creates a Differ object from the submitted DifferOptions.
 
 ### Differ methods
 
-#### open
+#### start
 
-Initiates the opening of the input streams (old, new) and reads the headers.
+returns a new DifferContext object with the input streams open and columns initialized.
 
-#### close
-
-Closes all open streams.
-
-#### getColumns
-
-Returns the current column names. This will open the streams if it wasn't already done.
-
-#### getStats
-
-Returns the currents stats. There is no side effect.
+You must call start to get an iterator (DifferContext.diffs) or if you need the columns prior to sending the diffs to the output with the "to" method.
 
 #### to
 
@@ -313,9 +303,35 @@ The options parameter can be either a standard output (console, null), a string 
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
 
-#### iterator
+### DifferContext methods
 
-Enumerates the changes between the old and new sources.
+#### close
+
+Closes all open streams.
+
+Note that the methods "to" or "diffs" will automatically close the streams.
+
+#### columns
+
+Returns the current column names.
+
+#### stats
+
+Returns the currents stats.
+
+#### to
+
+Initiates the comparison between the old and new sources and sends the diffs to the specified output.
+
+This returns the change stats once completed.
+
+The options parameter can be either a standard output (console, null), a string filename or an OutputOptions.
+
+Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
+
+#### diffs
+
+Enumerates the differences between the old and new sources.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
 

@@ -1,8 +1,6 @@
 import fs from 'fs';
 import lineByLine from 'n-readlines';
 
-//TODO: Differ should allow only one iteration because of header caching.
-// add differ.start() => DifferContext: columns, changes, stats
 //TODO: make stream operations async
 
 export class UnorderedStreamsError extends Error {
@@ -624,70 +622,14 @@ function createOutput(value: 'console' | 'null' | Filename | OutputOptions): {
 }
 
 export class Differ {
-    private stats = new DiffStats();
-    private isOpen = false;
-    private oldSource: Source;
-    private newSource: Source;
-    private comparer: RowComparer = defaultRowComparer;
-    private keys: Column[] = [];
-    private columns: Column[] = [];
-    private columnNames: string[] = [];
-    private columnsWithoutKeys: Column[] = [];
-    private normalizeOldRow: RowNormalizer = row => row;
-    private normalizeNewRow: RowNormalizer = row => row;
-
+    
     constructor(private options: DifferOptions) {
-        this.oldSource = createSource(options.oldSource);
-        this.newSource = createSource(options.newSource);
-        this.comparer = options.rowComparer ?? defaultRowComparer;
     }
 
-    /**
-     * Opens the input streams (old and new) and reads the nam.
-     * This will be automatically called by getHeaders, the iterator or the "to" method.
-     * This does nothing if the streams are already open.
-     */
-    open(): void {
-        if (!this.isOpen) {
-            this.isOpen = true;
-            this.stats = new DiffStats();
-            this.oldSource.reader.open();
-            this.newSource.reader.open();
-            this.extractHeaders();
-        }
-    }
-
-    /**
-     * Closes the input streams.
-     * This will be automatically called by the iterator or the "to" method.
-     * This does nothing if the streams are not open.
-     */
-    close(): void {
-        if (this.isOpen) {
-            this.newSource.reader.close();
-            this.oldSource.reader.close();
-            this.isOpen = false;
-        }
-    }
-
-    /**
-     * gets the normalized column names from the old and new streams, according to the includedFields/excludedFields constraints.
-     * Note that it will open the input streams to read the headers, but only once.
-     * @returns a list of column names
-     */
-    getColumns(): string[] {
-        if (this.columnNames.length === 0) {
-            this.open();
-        }
-        return this.columnNames;
-    }
-
-    /**
-     * gets the diff stats
-     * @returns the diff stats
-     */
-    getStats(): DiffStats {
-        return this.stats;
+    start(): DifferContext {
+        const ctx = new DifferContext(this.options);
+        ctx[OpenSymbol]();
+        return ctx;
     }
 
     /**
@@ -707,16 +649,109 @@ export class Differ {
      * console.log(stats);
      */
     to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
+        const ctx = this.start();
+        return ctx.to(options);
+    }    
+}
+
+const OpenSymbol = Symbol('open');
+
+export class DifferContext {
+    private _stats = new DiffStats();
+    private _columnNames: string[] = [];
+    private _isOpen = false;
+    private _isClosed = false;
+    private oldSource: Source;
+    private newSource: Source;
+    private comparer: RowComparer = defaultRowComparer;
+    private keys: Column[] = [];
+    private _columns: Column[] = [];
+    private columnsWithoutKeys: Column[] = [];
+    private normalizeOldRow: RowNormalizer = row => row;
+    private normalizeNewRow: RowNormalizer = row => row;
+
+    constructor(private options: DifferOptions) {
+        this.oldSource = createSource(options.oldSource);
+        this.newSource = createSource(options.newSource);
+        this.comparer = options.rowComparer ?? defaultRowComparer;
+    }
+
+    /**
+     * Opens the input streams (old and new) and reads the nam.
+     * This is an internal method that will be automatically called by "Differ.start" method.
+     */
+    [OpenSymbol](): void {
+        if (!this._isOpen) {
+            this._isOpen = true;
+            this.oldSource.reader.open();
+            this.newSource.reader.open();
+            this.extractHeaders();
+        }
+    }
+
+    /**
+     * Closes the input streams.
+     * This will be automatically called by the "diffs" or "to" methods.
+     * This does nothing if the streams are not open.
+     */
+    close(): void {
+        if (this._isOpen) {
+            this.newSource.reader.close();
+            this.oldSource.reader.close();
+            this._isOpen = false;
+        }
+        this._isClosed = true;
+    }
+
+    /**
+     * tells if the input streams are open or not
+     */
+    get isOpen() {
+        return this._isOpen;
+    }
+
+    /**
+     * gets the normalized column names from the old and new streams, according to the includedFields/excludedFields constraints.
+     * @returns a list of column names
+     */
+    get columns(): string[] {
+        return this._columnNames;
+    }
+
+    /**
+     * gets the diff stats
+     * @returns the diff stats
+     */
+    get stats(): DiffStats {
+        return this._stats;
+    }
+    
+    /**
+     * Iterates over the changes and sends them to the submitted output.
+     * @param options a standard ouput such as console or null, a string filename or a custom OutputOptions.
+     * @returns the change stats once all the changes have been processed. 
+     * Note that the stats might be different from "DiffContext.stats" when there is a filter in the output options, 
+     * as the context stats are updated by the iterator which doesn't have any filter.
+     * @throws {UnorderedStreamsError}
+     * @example
+     * import { diff } from 'tabular-data-differ';
+     * const stats = diff({
+     *   oldSource: './tests/a.csv',
+     *   newSource: './tests/b.csv',
+     *   keyFields: ['id'],
+     * }).to('console');
+     * console.log(stats);
+     */
+     to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
         const stats = new DiffStats();
-        const columns = this.getColumns();
         const output = createOutput(options);
         output.writer.open();
         try {
             output.writer.writeHeader({
-                columns,
+                columns: this.columns,
                 labels: output.labels,
             });
-            for (const rowDiff of this) {
+            for (const rowDiff of this.diffs()) {
                 let isValidDiff = output.filter?.(rowDiff) ?? true;
                 if (isValidDiff) {
                     stats.add(rowDiff);
@@ -725,24 +760,24 @@ export class Differ {
                 if (isValidDiff && canWriteDiff) { 
                     output.writer.writeDiff(rowDiff);
                 }
-                if (typeof output.changeLimit === 'number' && this.stats.totalChanges >= output.changeLimit) {
+                if (typeof output.changeLimit === 'number' && stats.totalChanges >= output.changeLimit) {
                     break;
                 }
             }    
-            output.writer.writeFooter({ stats: this.stats });
+            output.writer.writeFooter({ stats: stats });
         } finally {
             output.writer.close();
         }
         return stats;
     }
-    
+
     /**
-     * An iterator emitting changes between two input streams (old and new).
+     * Enumerates the differences between two input streams (old and new).
      * @yields {RowDiff}
      * @throws {UnorderedStreamsError}
      * @example
      * import { diff, ArrayInputStream } from 'tabular-data-differ';
-     * const differ = diff({
+     * const ctx = diff({
      *     oldSource: {
      *         stream: new ArrayInputStream([
      *             'id,name',
@@ -758,15 +793,17 @@ export class Differ {
      *         ]),
      *     },
      *     keyFields: ['id'],
-     * });
-     * console.log('columns:', differ.getColumns());
-     * for (const rowDiff of differ) {
+     * }).start();
+     * console.log('columns:', ctx.getColumns());
+     * for (const rowDiff of ctx.diffs()) {
      *     console.log(rowDiff);
      * }
-     * console.log('stats:', differ.getStats());
+     * console.log('stats:', ctx.getStats());
      */
-    *[Symbol.iterator]() {
-        this.open();
+    *diffs() {
+        if (this._isClosed) {
+            throw new Error('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
+        }
         try {
             let pairProvider: RowPairProvider = () => this.getNextPair();
             let previousPair: RowPair = {}
@@ -805,15 +842,15 @@ export class Differ {
         if (newHeader.columns.length === 0) {
             throw new Error('Expected to find columns in new source');
         }
-        this.columns = this.normalizeColumns(oldHeader.columns, newHeader.columns);
-        this.keys = this.extractKeys(this.columns, this.options.keys.map(asColumnDefinition));
-        this.columnsWithoutKeys = this.columns.filter(col => !this.keys.some(key => key.name === col.name));
-        this.columnNames = this.columns.map(col => col.name);
-        if (!sameArrays(oldHeader.columns, this.columns.map(col => col.name))) {
-            this.normalizeOldRow = row => row ? this.columns.map(col => row[col.oldIndex] ?? '') : undefined;
+        this._columns = this.normalizeColumns(oldHeader.columns, newHeader.columns);
+        this.keys = this.extractKeys(this._columns, this.options.keys.map(asColumnDefinition));
+        this.columnsWithoutKeys = this._columns.filter(col => !this.keys.some(key => key.name === col.name));
+        this._columnNames = this._columns.map(col => col.name);
+        if (!sameArrays(oldHeader.columns, this._columns.map(col => col.name))) {
+            this.normalizeOldRow = row => row ? this._columns.map(col => row[col.oldIndex] ?? '') : undefined;
         }
-        if (!sameArrays(newHeader.columns, this.columns.map(col => col.name))) {
-            this.normalizeNewRow = row => row ? this.columns.map(col => row[col.newIndex]) : undefined;
+        if (!sameArrays(newHeader.columns, this._columns.map(col => col.name))) {
+            this.normalizeNewRow = row => row ? this._columns.map(col => row[col.newIndex]) : undefined;
         }
     }
 
@@ -883,10 +920,9 @@ export class Differ {
         } else if (delta < 0) {
             const oldRow = this.normalizeOldRow(pair.oldRow);
             return { delta, status: 'deleted', oldRow };
-        } else {
-            const newRow = this.normalizeNewRow(pair.newRow);
-            return { delta, status: 'added', newRow };
         }
+        const newRow = this.normalizeNewRow(pair.newRow);
+        return { delta, status: 'added', newRow };        
     }
 
     private ensureRowsAreInAscendingOrder(source: string, previous?: Row, current?: Row) {
@@ -1006,9 +1042,8 @@ export function numberComparer(a: string, b: string): number {
     const bb = parseFloat(b);
     if (aa < bb) {
         return -1;
-    } else {
-        return 1;
     }
+    return 1;
 }
 
 export function defaultRowComparer(columns: Column[], a? : Row, b?: Row): number {
