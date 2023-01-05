@@ -2,12 +2,13 @@ import fs from 'fs';
 import lineByLine from 'n-readlines';
 
 //TODO: Differ should allow only one iteration because of header caching.
+// add differ.start() => DifferContext: columns, changes, stats
 //TODO: make stream operations async
-//TODO: allow to specify a custom comparer for each specified key
-// keyFields: ["id", {name: "version", comparer: NumberComparer, descendingOrder: true}]
 
 export class UnorderedStreamsError extends Error {
 }
+
+export type ColumnComparer = (a: string, b: string) => number;
 
 export type Row = string[];
 
@@ -26,6 +27,8 @@ export type Column = {
     name: string;
     oldIndex: number;
     newIndex: number;
+    comparer?: ColumnComparer;
+    order?: ColumnOrdering;
 }
 
 export type RowPairProvider = () => RowPair;
@@ -452,17 +455,52 @@ export interface OutputOptions {
     labels?: Record<string, string>;
 }
 
+export type ColumnOrdering = 'ASC' | 'DESC';
+
+export interface ColumnDefinition {
+    /**
+     * the name of the column.
+     */
+    name: string;
+    /**
+     * either a standard comparer ('string' or 'number') or a custom comparer.
+     */
+    comparer?: 'string' | 'number' | ColumnComparer;
+    /**
+     * specifies if the column is in ascending (ASC) or descending (DESC) order.
+     */
+    order?: ColumnOrdering;
+}
+
 /**
  * Options for configuring the Differ object that will traverse two input streams in parallel in order to compare their rows
  * and produce a change set.
  */
 export interface DifferOptions {
+    /**
+     * Configures the old source
+     */
     oldSource: Filename | SourceOptions; 
-    newSource: Filename | SourceOptions; 
-    keyFields: string[];
-    includedFields?: string[];
-    excludedFields?: string[];
-    descendingOrder?: boolean;
+    /**
+     * Configures the new source
+     */
+     newSource: Filename | SourceOptions; 
+     /**
+      * Configures the primary keys used to compare the rows between the old and new sources
+      */
+    keys: (string | ColumnDefinition)[];
+    /**
+     * the list of columns to keep from the input sources. If not specified, all columns are selected.
+     */
+    includedColumns?: string[];
+    /**
+     * the list of columns to exclude from the input sources.
+     */
+    excludedColumns?: string[];
+    /**
+     * Specifies a custom row comparer
+     */
+    rowComparer?: RowComparer;
 }
 
 /**
@@ -509,7 +547,6 @@ function createStreamReader(options: SourceOptions): StreamReader {
 
 interface Source {
     reader: StreamReader;
-    filter?: RowFilter;
 }
 
 function createSource(value: Filename | SourceOptions): Source {
@@ -520,7 +557,6 @@ function createSource(value: Filename | SourceOptions): Source {
     }
     return { 
         reader: createStreamReader(value), 
-        filter: value.filter 
     };
 }
 
@@ -603,13 +639,11 @@ export class Differ {
     constructor(private options: DifferOptions) {
         this.oldSource = createSource(options.oldSource);
         this.newSource = createSource(options.newSource);
-        this.comparer = options.descendingOrder === true ? 
-                            invertRowComparer(defaultRowComparer) : 
-                            defaultRowComparer;
+        this.comparer = options.rowComparer ?? defaultRowComparer;
     }
 
     /**
-     * Opens the input streams (old and new) and reads the headers.
+     * Opens the input streams (old and new) and reads the nam.
      * This will be automatically called by getHeaders, the iterator or the "to" method.
      * This does nothing if the streams are already open.
      */
@@ -771,12 +805,12 @@ export class Differ {
         if (newHeader.columns.length === 0) {
             throw new Error('Expected to find columns in new source');
         }
-        this.keys = this.normalizeKeys(oldHeader.columns, newHeader.columns, this.options.keyFields);
         this.columns = this.normalizeColumns(oldHeader.columns, newHeader.columns);
+        this.keys = this.extractKeys(this.columns, this.options.keys.map(asColumnDefinition));
         this.columnsWithoutKeys = this.columns.filter(col => !this.keys.some(key => key.name === col.name));
         this.columnNames = this.columns.map(col => col.name);
         if (!sameArrays(oldHeader.columns, this.columns.map(col => col.name))) {
-            this.normalizeOldRow = row => row ? this.columns.map(col => row[col.oldIndex]) : undefined;
+            this.normalizeOldRow = row => row ? this.columns.map(col => row[col.oldIndex] ?? '') : undefined;
         }
         if (!sameArrays(newHeader.columns, this.columns.map(col => col.name))) {
             this.normalizeNewRow = row => row ? this.columns.map(col => row[col.newIndex]) : undefined;
@@ -784,23 +818,20 @@ export class Differ {
     }
 
     private normalizeColumns(oldColumns: Row, newColumns: Row) {
-        const includedFields = new Set<string>(this.options.includedFields);
-        const excludedFields = new Set<string>(this.options.excludedFields);
+        const includedColumns = new Set<string>(this.options.includedColumns);
+        const excludedColumns = new Set<string>(this.options.excludedColumns);
         const columns: Column[] = [];
-        for (let i = 0; i < newColumns.length; i++) {
-            const newCol = newColumns[i];
-            const isIncluded = includedFields.size === 0 || includedFields.has(newCol);
+        for (let newIndex = 0; newIndex < newColumns.length; newIndex++) {
+            const name = newColumns[newIndex];
+            const isIncluded = includedColumns.size === 0 || includedColumns.has(name);
             if (isIncluded) {
-                const isExcluded = excludedFields.has(newCol);
+                const isExcluded = excludedColumns.has(name);
                 if (!isExcluded) {
-                    const oldIdx = oldColumns.indexOf(newCol);
-                    if (oldIdx < 0) {
-                        throw new Error(`Could not find new column '${newCol}' in old columns:\nold=${oldColumns}\nnew=${newColumns}`);
-                    }
+                    const oldIndex = oldColumns.indexOf(name);
                     columns.push({
-                        name: newCol,
-                        newIndex: i,
-                        oldIndex: oldIdx,
+                        name,
+                        newIndex,
+                        oldIndex,
                     });
                 }
             }
@@ -808,33 +839,32 @@ export class Differ {
         return columns;
     }
 
-    private normalizeKeys(oldColumns: Row, newColumns: Row, keyFields: string[]) {
-        const columns: Column[] = [];
-        for (const keyField of keyFields) {
-            const oldIndex = oldColumns.indexOf(keyField);
-            if (oldIndex < 0) {
-                throw new Error(`Could not find key '${keyField}' in old columns: ${oldColumns}`);
+    private extractKeys(columns: Column[], keys: ColumnDefinition[]) {
+        const result: Column[] = [];
+        for (const key of keys) {
+            const column = columns.find(col => col.name === key.name);
+            if (column) {
+                if (column.oldIndex < 0) {
+                    throw new Error(`Could not find key '${key.name}' in old stream`);
+                }
+                result.push({
+                    ...column,
+                    comparer: asColumnComparer(key.comparer),
+                    order: key.order,
+                });
+            } else {
+                throw new Error(`Could not find key '${key.name}' in new stream`);
             }
-            const newIndex = newColumns.indexOf(keyField);
-            if (newIndex < 0) {
-                throw new Error(`Could not find key '${keyField}' in new columns: ${newColumns}`);
-            }
-            columns.push({
-                name: keyField,
-                newIndex,
-                oldIndex,
-            });
-
         }
-        return columns;
+        return result;
     }
 
     private getNextOldRow(): Row | undefined {
-        return nextFilteredRow(this.oldSource.reader, this.oldSource.filter);
+        return this.oldSource.reader.readRow();
     }
 
     private getNextNewRow(): Row | undefined {
-        return nextFilteredRow(this.newSource.reader, this.newSource.filter);
+        return this.newSource.reader.readRow();
     }
 
     private getNextPair(): RowPair {
@@ -862,15 +892,10 @@ export class Differ {
     private ensureRowsAreInAscendingOrder(source: string, previous?: Row, current?: Row) {
         if (previous && current) {
             const oldDelta = this.comparer(this.keys, previous, current);
-            if (this.options.descendingOrder === true) {
-                if (oldDelta > 0) {
-                    throw new UnorderedStreamsError(`Expected rows to be in descending order in ${source} source but received: previous=${previous}, current=${current}`);
-                }        
-            } else {
-                if (oldDelta > 0) {
-                    throw new UnorderedStreamsError(`Expected rows to be in ascending order in ${source} source but received: previous=${previous}, current=${current}`);
-                }        
-            }
+            if (oldDelta > 0) {
+                const colOrder = this.keys.map(key => `${key.name} ${key.order ?? 'ASC'}`);
+                throw new UnorderedStreamsError(`Expected rows to be ordered by "${colOrder}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
+            }        
         }
     }
 
@@ -880,9 +905,26 @@ export class Differ {
     }
 }
 
+function asColumnDefinition(value: string | ColumnDefinition): ColumnDefinition {
+    if (typeof value === 'string') {
+        return { name: value };
+    }
+    return value;
+}
+
+function asColumnComparer(comparer?: 'string' | 'number' | ColumnComparer) : ColumnComparer | undefined {
+    if (comparer === 'string') {
+        return stringComparer;
+    }
+    if (comparer === 'number') {
+        return numberComparer;
+    }
+    return comparer;
+}
+
 export function parseCsvLine(delimiter: string, line?: string): Row | undefined {
     if (line) {
-        const fields: Row = [];
+        const row: Row = [];
         let idx = 0;
         let prevIdx = 0;
         let c = '';
@@ -906,7 +948,7 @@ export function parseCsvLine(delimiter: string, line?: string): Row | undefined 
                 if (hasEscapedDoubleQuote) {
                     value = value.replaceAll('""', '"');
                 }
-                fields.push(value);
+                row.push(value);
                 idx++;
                 if (line[idx] === delimiter) {
                     idx++;
@@ -914,7 +956,7 @@ export function parseCsvLine(delimiter: string, line?: string): Row | undefined 
                 prevIdx = idx;
             } else if (c === delimiter) {
                 const value = line.substring(prevIdx, idx);
-                fields.push(value);
+                row.push(value);
                 idx++;
                 prevIdx = idx;
             } else {
@@ -923,21 +965,9 @@ export function parseCsvLine(delimiter: string, line?: string): Row | undefined 
         }
         if (prevIdx < idx) {
             const value = line.substring(prevIdx, idx);
-            fields.push(value);    
+            row.push(value);    
         } else if (c === delimiter) {
-            fields.push('');
-        }
-        return fields;
-    }
-}
-
-function nextFilteredRow(reader: StreamReader, filter?: RowFilter): Row | undefined {
-    while (true) {
-        const row = reader.readRow();
-        if (row && filter) {
-            if (!filter(row)) {
-                continue;
-            }
+            row.push('');
         }
         return row;
     }
@@ -955,9 +985,35 @@ export function serializeRowAsCsvLine(row : Row, delimiter?: string) {
     return row.map(serializeCsvField).join(delimiter ?? ',');
 }
 
-export function defaultRowComparer(keys: Column[], a? : Row, b?: Row): number {
-    if (keys.length === 0) {
-        throw new Error('Expected to have at least one key in keys parameter');
+export function stringComparer(a: string, b: string): number {
+    // We can't use localeCompare since the ordered csv file produced by SQLite won't use the same locale
+    // return a.localeCompare(b);
+    if (a === b) {
+        return 0;
+    } else if (a < b) {
+        return -1;
+    } 
+    return 1;
+}
+
+export function numberComparer(a: string, b: string): number {
+    // keep numbers as strings when comparing for equality
+    // since it avoids doing the number conversion and will also avoid floating point errors
+    if (a === b) {
+        return 0;
+    }
+    const aa = parseFloat(a);
+    const bb = parseFloat(b);
+    if (aa < bb) {
+        return -1;
+    } else {
+        return 1;
+    }
+}
+
+export function defaultRowComparer(columns: Column[], a? : Row, b?: Row): number {
+    if (columns.length === 0) {
+        throw new Error('Expected to have at least one entry in the columns parameter');
     }
     if (a === undefined && b === undefined) {
         return 0;
@@ -968,12 +1024,14 @@ export function defaultRowComparer(keys: Column[], a? : Row, b?: Row): number {
     if (a !== undefined && b === undefined) {
         return -1;
     }
-    for (const key of keys) {
-        const aa = a![key.oldIndex] ?? '';
-        const bb = b![key.newIndex] ?? '';
-        // We can't use localeCompare since the ordered csv file produced by SQLite won't use the same locale
-        // const delta = aa.localeCompare(bb);
-        const delta = aa === bb ? 0 : aa < bb ? -1 : 1;
+    for (const col of columns) {
+        const aa = a![col.oldIndex] ?? '';
+        const bb = b![col.newIndex] ?? '';
+        const comparer = col.comparer ?? stringComparer;
+        let delta = comparer(aa, bb);
+        if (delta !== 0 && col.order === 'DESC') {
+            delta = - delta;
+        }
         if (delta !== 0) {
             return delta;
         }

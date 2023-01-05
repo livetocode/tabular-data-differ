@@ -109,7 +109,7 @@ describe('differ', () => {
     });
     describe('comparison', () => {
         test('should have at least one key', () => {
-            expect(() => defaultRowComparer([], undefined, undefined)).toThrowError('Expected to have at least one key in keys parameter');
+            expect(() => defaultRowComparer([], undefined, undefined)).toThrowError('Expected to have at least one entry in the columns parameter');
         });
         describe('undefined rows', () => {
             const keys: Column[] = [{
@@ -134,7 +134,7 @@ describe('differ', () => {
                 expect(res).toBe(1);
             });    
         });        
-        describe('single field', () => {
+        describe('single pk column', () => {
             const keys: Column[] = [{
                 name: 'id',
                 oldIndex: 0,
@@ -159,7 +159,7 @@ describe('differ', () => {
                 expect(res).toBe(1);
             });    
         });
-        describe('2 fields', () => {
+        describe('2 pk columns', () => {
             const keys: Column[] = [
                 {
                     name: 'i1d',
@@ -219,8 +219,10 @@ describe('differ', () => {
                     '3,dave,44',
                     '2,rachel,22',
                 ],
-                keyFields: ['ID'],
-            })).toThrowError('Expected rows to be in ascending order in new source but received: previous=3,dave,44, current=2,rachel,22');
+                keys: ['ID'],
+            })).toThrowError(`Expected rows to be ordered by \"ID ASC\" in new source but received:
+  previous=3,dave,44
+  current=2,rachel,22`);
         });        
         test('should detect invalid ordering in descending mode', () => {
             expect(() => diffStrings({
@@ -236,15 +238,19 @@ describe('differ', () => {
                     '1,john,33',
                     '2,rachel,22',
                 ],
-                keyFields: ['ID'],
-                descendingOrder: true,
-            })).toThrowError(new UnorderedStreamsError('Expected rows to be in descending order in new source but received: previous=1,john,33, current=2,rachel,22'));
+                keys: [{
+                    name: 'ID',
+                    order: 'DESC',
+                }],
+            })).toThrowError(new UnorderedStreamsError(`Expected rows to be ordered by "ID DESC" in new source but received:
+  previous=1,john,33
+  current=2,rachel,22`));
         });        
         test('should be able to execute twice', () => {
             const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             });
             const stats1 = differ.to('null');
             const stats2 = differ.to('null');
@@ -260,40 +266,27 @@ describe('differ', () => {
                 f.close();
             }
         });       
-        test('should have headers in old source', () => {
+        test('should have columns in old source', () => {
             expect(() => diffStrings({
                 oldLines: [
                 ],
                 newLines: [
                     'ID,NAME,AGE',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             })).toThrowError('Expected to find columns in old source');
         });
-        test('should have headers in new source', () => {
+        test('should have columns in new source', () => {
             expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
                 newLines: [
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             })).toThrowError('Expected to find columns in new source');            
         });
-        test('should match headers in both sources', () => {
-            expect(() => diffStrings({
-                oldLines: [
-                    'ID,NAME,AGE',
-                ],
-                newLines: [
-                    'ID,TITLE,AGE',
-                ],
-                keyFields: ['ID'],
-            })).toThrowError(`Could not find new column 'TITLE' in old columns:
-old=ID,NAME,AGE
-new=ID,TITLE,AGE`);            
-        });
-        test('should find keys in old headers', () => {
+        test('should find keys in old columns', () => {
             expect(() => diffStrings({
                 oldLines: [
                     'CODE,NAME,AGE',
@@ -301,10 +294,10 @@ new=ID,TITLE,AGE`);
                 newLines: [
                     'ID,NAME,AGE',
                 ],
-                keyFields: ['ID'],
-            })).toThrowError(`Could not find key 'ID' in old columns: CODE,NAME,AGE`);            
+                keys: ['ID'],
+            })).toThrowError(`Could not find key 'ID' in old stream`);            
         });
-        test('should find keys in new headers', () => {
+        test('should find keys in new columns', () => {
             expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
@@ -314,8 +307,8 @@ new=ID,TITLE,AGE`);
                     'CODE,NAME,AGE',
                     'a1,a,33',
                 ],
-                keyFields: ['ID'],
-            })).toThrowError(`Could not find key 'ID' in new columns: CODE,NAME,AGE`);            
+                keys: ['ID'],
+            })).toThrowError(`Could not find key 'ID' in new stream`);            
         });
     });
     describe('changes', () => {        
@@ -327,7 +320,7 @@ new=ID,TITLE,AGE`);
                 newLines: [
                     'ID,NAME,AGE',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([]);
@@ -351,7 +344,7 @@ new=ID,TITLE,AGE`);
                     '1,john,33',
                     '2,rachel,22',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([
@@ -388,7 +381,7 @@ new=ID,TITLE,AGE`);
                 newLines: [
                     'ID,NAME,AGE',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([
@@ -429,7 +422,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,22',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([]);
@@ -457,7 +450,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,22',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
                 keepSameRows: true,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
@@ -505,7 +498,7 @@ new=ID,TITLE,AGE`);
                     '2,22,rachel',
                     '3,44,dave',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'AGE', 'NAME']);
             expect(res.diffs).toEqual([]);
@@ -533,8 +526,8 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
-                excludedFields: ['AGE'],
+                keys: ['ID'],
+                excludedColumns: ['AGE'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
             expect(res.diffs).toEqual([]);
@@ -562,8 +555,8 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
-                includedFields: ['ID', 'NAME'],
+                keys: ['ID'],
+                includedColumns: ['ID', 'NAME'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
             expect(res.diffs).toEqual([]);
@@ -591,7 +584,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([{
@@ -624,7 +617,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,22',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([
@@ -671,7 +664,7 @@ new=ID,TITLE,AGE`);
                     '2,20,rachel',
                     '3,44,dave',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'AGE', 'NAME']);
             expect(res.diffs).toEqual([{
@@ -704,8 +697,8 @@ new=ID,TITLE,AGE`);
                     '2,rach,22',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
-                excludedFields: ['AGE'],
+                keys: ['ID'],
+                excludedColumns: ['AGE'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
             expect(res.diffs).toEqual([{
@@ -738,8 +731,8 @@ new=ID,TITLE,AGE`);
                     '2,rach,22',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
-                includedFields: ['ID', 'NAME'],
+                keys: ['ID'],
+                includedColumns: ['ID', 'NAME'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
             expect(res.diffs).toEqual([{
@@ -758,6 +751,81 @@ new=ID,TITLE,AGE`);
                 changePercent: 33.33,
             });
         });    
+        test('No modification but adding a new column should force the rows to be modified', () => {
+            const res = diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                ],
+                newLines: [
+                    'ID,NAME,AGE,NEW_COL',
+                    '1,john,33,new1',
+                    '2,rachel,22,new2',
+                    '3,dave,44,new3',
+                ],
+                keys: ['ID'],
+            });
+            expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE', 'NEW_COL']);
+            expect(res.diffs).toEqual([
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ '1', 'john', '33', '' ],
+                    newRow: [ '1', 'john', '33', 'new1' ]
+                },
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ '2', 'rachel', '22', '' ],
+                    newRow: [ '2', 'rachel', '22', 'new2' ]
+                },
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ '3', 'dave', '44', '' ],
+                    newRow: [ '3', 'dave', '44', 'new3' ]
+                }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 3,
+                totalChanges: 3,
+                added: 0,
+                modified: 3,
+                deleted: 0,
+                same: 0,
+                changePercent: 100,
+            });
+        });            
+        test('No modification but removing an old column should be transparent', () => {
+            const res = diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE,REMOVED_COL',
+                    '1,john,33,rem1',
+                    '2,rachel,22,rem2',
+                    '3,dave,44,rem3',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                ],
+                keys: ['ID'],
+            });
+            expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
+            expect(res.diffs).toEqual([]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 3,
+                totalChanges: 0,
+                added: 0,
+                modified: 0,
+                deleted: 0,
+                same: 3,
+                changePercent: 0,
+            });
+        });    
         test('1 deleted', () => {
             const res = diffStrings({
                 oldLines: [
@@ -771,7 +839,7 @@ new=ID,TITLE,AGE`);
                     '1,john,33',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([{
@@ -803,7 +871,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '3,dave,44',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([{
@@ -835,7 +903,7 @@ new=ID,TITLE,AGE`);
                     '4,paula,11',
                     '5,jane,66',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([
@@ -894,7 +962,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '4,paula,11',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
                 keepSameRows: true,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
@@ -948,9 +1016,11 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '1,john,33',
                 ],
-                keyFields: ['ID'],
+                keys: [{
+                    name: 'ID',
+                    order: 'DESC',
+                }],
                 keepSameRows: true,
-                descendingOrder: true,
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
             expect(res.diffs).toEqual([
@@ -988,7 +1058,339 @@ new=ID,TITLE,AGE`);
                 same: 1,
                 changePercent: 75,
             });
-        });                    
+        });
+        test('same, modified, added and deleted, with a number primary key', () => {
+            const res = diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,11',
+                    '2,rachel,22',
+                    '3,dave,33',
+                    '11,john,111',
+                    '12,rachel,122',
+                    '13,dave,133',
+                    '21,john,211',
+                    '22,rachel,222',
+                    '23,dave,233',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,11',
+                    '2,rachel,2',
+                    '11,john,111',
+                    '12,rachel,122',
+                    '13,dave,133',
+                    '14,dave,144',
+                    '21,john,211',
+                    '23,dave,233',
+                ],
+                keys: [{
+                    name: 'ID',
+                    comparer: 'number',
+                }],
+                keepSameRows: true,
+            });
+            expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
+            expect(res.diffs).toEqual([
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '1', 'john', '11' ],
+                    newRow: [ '1', 'john', '11' ]
+                },
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ '2', 'rachel', '22' ],
+                    newRow: [ '2', 'rachel', '2' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '3', 'dave', '33' ] },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '11', 'john', '111' ],
+                    newRow: [ '11', 'john', '111' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '12', 'rachel', '122' ],
+                    newRow: [ '12', 'rachel', '122' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '13', 'dave', '133' ],
+                    newRow: [ '13', 'dave', '133' ]
+                },
+                { delta: 1, status: 'added', newRow: [ '14', 'dave', '144' ] },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '21', 'john', '211' ],
+                    newRow: [ '21', 'john', '211' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '22', 'rachel', '222' ] },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '23', 'dave', '233' ],
+                    newRow: [ '23', 'dave', '233' ]
+                }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 10,
+                totalChanges: 4,
+                added: 1,
+                modified: 1,
+                deleted: 2,
+                same: 6,
+                changePercent: 40,
+            });
+        });
+        test('same, modified, added and deleted, with a number primary key, in descending order', () => {
+            const res = diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '23,dave,233',
+                    '22,rachel,222',
+                    '21,john,211',
+                    '13,dave,133',
+                    '12,rachel,122',
+                    '11,john,111',
+                    '3,dave,33',
+                    '2,rachel,22',
+                    '1,john,11',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '23,dave,233',
+                    '21,john,211',
+                    '14,dave,144',
+                    '13,dave,133',
+                    '12,rachel,122',
+                    '11,john,111',
+                    '2,rachel,2',
+                    '1,john,11',
+                ],
+                keys: [{
+                    name: 'ID',
+                    comparer: 'number',
+                    order: 'DESC',
+                }],
+                keepSameRows: true,
+            });
+            expect(res.header?.columns).toEqual(['ID', 'NAME', 'AGE']);
+            expect(res.diffs).toEqual([
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '23', 'dave', '233' ],
+                    newRow: [ '23', 'dave', '233' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '22', 'rachel', '222' ] },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '21', 'john', '211' ],
+                    newRow: [ '21', 'john', '211' ]
+                },
+                { delta: 1, status: 'added', newRow: [ '14', 'dave', '144' ] },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '13', 'dave', '133' ],
+                    newRow: [ '13', 'dave', '133' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '12', 'rachel', '122' ],
+                    newRow: [ '12', 'rachel', '122' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '11', 'john', '111' ],
+                    newRow: [ '11', 'john', '111' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '3', 'dave', '33' ] },
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ '2', 'rachel', '22' ],
+                    newRow: [ '2', 'rachel', '2' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ '1', 'john', '11' ],
+                    newRow: [ '1', 'john', '11' ]
+                }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 10,
+                totalChanges: 4,
+                added: 1,
+                modified: 1,
+                deleted: 2,
+                same: 6,
+                changePercent: 40,
+            });
+        });
+        test('same, modified, added and deleted, with a complex primary key', () => {
+            const res = diffStrings({
+                oldLines: [
+                    'CODE,VERSION,NAME,PRICE',
+                    'apple,1,Apple,0.5',
+                    'apple,2,Apple,0.6',
+                    'banana,1,Bananax,0.2',
+                    'banana,2,Banana,0.2',
+                    'banana,3,Banana,0.25',
+                ],
+                newLines: [
+                    'CODE,VERSION,NAME,PRICE',
+                    'apple,1,Apple,0.5',
+                    'apple,2,Apples,0.6',
+                    'banana,2,Banana,0.2',
+                    'banana,3,Banana,0.25',
+                    'banana,4,Banana,0.3',
+                    'pear,1,Pear,0.8',
+                ],
+                keys: [
+                    'CODE',
+                    {
+                        name: 'VERSION',
+                        comparer: 'number',
+                    }
+                ],
+                keepSameRows: true,
+            });
+            expect(res.header?.columns).toEqual(['CODE', 'VERSION', 'NAME', 'PRICE']);
+            expect(res.diffs).toEqual([
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ 'apple', '1', 'Apple', '0.5' ],
+                    newRow: [ 'apple', '1', 'Apple', '0.5' ]
+                },
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ 'apple', '2', 'Apple', '0.6' ],
+                    newRow: [ 'apple', '2', 'Apples', '0.6' ]
+                },
+                {
+                    delta: -1,
+                    status: 'deleted',
+                    oldRow: [ 'banana', '1', 'Bananax', '0.2' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ 'banana', '2', 'Banana', '0.2' ],
+                    newRow: [ 'banana', '2', 'Banana', '0.2' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ 'banana', '3', 'Banana', '0.25' ],
+                    newRow: [ 'banana', '3', 'Banana', '0.25' ]
+                },
+                {
+                    delta: 1,
+                    status: 'added',
+                    newRow: [ 'banana', '4', 'Banana', '0.3' ]
+                },
+                { delta: 1, status: 'added', newRow: [ 'pear', '1', 'Pear', '0.8' ] }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 7,
+                totalChanges: 4,
+                added: 2,
+                modified: 1,
+                deleted: 1,
+                same: 3,
+                changePercent: 57.14,
+            });
+        });        
+        test('same, modified, added and deleted, with a complex primary key, in descending order for 2nd pk field', () => {
+            const res = diffStrings({
+                oldLines: [
+                    'CODE,VERSION,NAME,PRICE',
+                    'apple,2,Apple,0.6',
+                    'apple,1,Apple,0.5',
+                    'banana,3,Banana,0.25',
+                    'banana,2,Banana,0.2',
+                    'banana,1,Bananax,0.2',
+                ],
+                newLines: [
+                    'CODE,VERSION,NAME,PRICE',
+                    'apple,2,Apples,0.6',
+                    'apple,1,Apple,0.5',
+                    'banana,4,Banana,0.3',
+                    'banana,3,Banana,0.25',
+                    'banana,2,Banana,0.2',
+                    'pear,1,Pear,0.8',
+                ],
+                keys: [
+                    'CODE',
+                    {
+                        name: 'VERSION',
+                        comparer: 'number',
+                        order: 'DESC'
+                    }
+                ],
+                keepSameRows: true,
+            });
+            expect(res.header?.columns).toEqual(['CODE', 'VERSION', 'NAME', 'PRICE']);
+            expect(res.diffs).toEqual([
+                {
+                    delta: 0,
+                    status: 'modified',
+                    oldRow: [ 'apple', '2', 'Apple', '0.6' ],
+                    newRow: [ 'apple', '2', 'Apples', '0.6' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ 'apple', '1', 'Apple', '0.5' ],
+                    newRow: [ 'apple', '1', 'Apple', '0.5' ]
+                },
+                {
+                    delta: 1,
+                    status: 'added',
+                    newRow: [ 'banana', '4', 'Banana', '0.3' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ 'banana', '3', 'Banana', '0.25' ],
+                    newRow: [ 'banana', '3', 'Banana', '0.25' ]
+                },
+                {
+                    delta: 0,
+                    status: 'same',
+                    oldRow: [ 'banana', '2', 'Banana', '0.2' ],
+                    newRow: [ 'banana', '2', 'Banana', '0.2' ]
+                },
+                {
+                    delta: -1,
+                    status: 'deleted',
+                    oldRow: [ 'banana', '1', 'Bananax', '0.2' ]
+                },
+                { delta: 1, status: 'added', newRow: [ 'pear', '1', 'Pear', '0.8' ] }
+            ]);
+            expect(res.footer?.stats).toEqual({
+                totalComparisons: 7,
+                totalChanges: 4,
+                added: 2,
+                modified: 1,
+                deleted: 1,
+                same: 3,
+                changePercent: 57.14,
+            });
+        });        
         test('keep first 2 changes', () => {
             const res = diffStrings({
                 oldLines: [
@@ -1003,7 +1405,7 @@ new=ID,TITLE,AGE`);
                     '2,rachel,20',
                     '4,paula,11',
                 ],
-                keyFields: ['ID'],
+                keys: ['ID'],
                 keepSameRows: true,
                 changeLimit: 2,
             });
@@ -1043,7 +1445,7 @@ new=ID,TITLE,AGE`);
             const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             });
             differ.to({
                 format: (_options) => output,
@@ -1083,7 +1485,7 @@ new=ID,TITLE,AGE`);
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
-                keyFields: ['id'],
+                keys: ['id'],
             });
             differ.to({
                 format: (_options) => output,
@@ -1116,7 +1518,7 @@ new=ID,TITLE,AGE`);
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to('./output/files/output.csv');
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1141,7 +1543,7 @@ added,11,a11,b11,c11
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to({ 
                 stream: './output/files/output.csv',
                 keepOldValues: true,
@@ -1175,7 +1577,7 @@ added,11,a11,b11,c11,,,,
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
-                keyFields: ['id'],
+                keys: ['id'],
             }).to({
                 stream: './output/files/output.tsv',
                 delimiter: '\t',
@@ -1208,7 +1610,7 @@ added	11	a11	b11	c11
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
-                keyFields: ['id'],
+                keys: ['id'],
             }).to({
                 stream: './output/files/output.tsv',
                 delimiter: '\t',
@@ -1236,7 +1638,7 @@ added	11	a11	b11	c11
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to({
                 stream: './output/files/output.json',
                 format: 'json',
@@ -1265,7 +1667,7 @@ added	11	a11	b11	c11
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to({
                 stream: './output/files/output.json',
                 format: 'json',
@@ -1295,7 +1697,7 @@ added	11	a11	b11	c11
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to({
                 stream: './output/files/output.json',
                 format: 'json',
@@ -1328,7 +1730,7 @@ added	11	a11	b11	c11
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to('console');
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1344,7 +1746,7 @@ added	11	a11	b11	c11
             const stats = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
-                keyFields: ['id'],
+                keys: ['id'],
             }).to('null');
             expect(stats).toEqual({
                 totalComparisons: 11,

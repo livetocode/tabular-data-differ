@@ -68,7 +68,40 @@ import { diff } from 'tabular-data-differ';
 const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    keyFields: ['id'],
+    keys: ['id'],
+}).to('console');
+console.log(stats);
+```
+
+### Diff 2 CSV files on the console when the key column is in descending order
+
+```Typescript
+import { diff } from 'tabular-data-differ';
+const stats = diff({
+    oldSource: './tests/a.csv',
+    newSource: './tests/b.csv',
+    keys: [{
+        name: 'id',
+        order: 'DESC',
+    }],
+}).to('console');
+console.log(stats);
+```
+
+### Diff 2 CSV files on the console with a multi-column primary key, including a number
+
+```Typescript
+import { diff } from 'tabular-data-differ';
+const stats = diff({
+    oldSource: './tests/a.csv',
+    newSource: './tests/b.csv',
+    keys: [
+        'code',
+        {
+            name: 'version',
+            comparer: 'number',
+        }
+    ],
 }).to('console');
 console.log(stats);
 ```
@@ -81,7 +114,7 @@ const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     output: 'null',
-    keyFields: ['id'],
+    keys: ['id'],
 }).to('null');
 console.log(stats);
 ```
@@ -93,7 +126,7 @@ import { diff } from 'tabular-data-differ';
 const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    keyFields: ['id'],
+    keys: ['id'],
 }).to('./temp/delta.csv');
 console.log(stats);
 ```
@@ -105,7 +138,7 @@ import { diff } from 'tabular-data-differ';
 const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    keyFields: ['id'],
+    keys: ['id'],
 }).to({
     stream: './temp/delta.json',
     format: 'json',
@@ -120,7 +153,7 @@ import { diff } from 'tabular-data-differ';
 const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    keyFields: ['id'],
+    keys: ['id'],
 }).to({
     stream: './temp/delta.tsv',
     delimiter: '\t',
@@ -138,7 +171,7 @@ const stats = diff({
         stream: './tests/b.tsv',
         delimiter: '\t',
     },
-    keyFields: ['id'],
+    keys: ['id'],
 }).to({
     stream: './temp/delta.tsv',
     format: 'json',
@@ -165,7 +198,7 @@ const differ = diff({
             '3,sarah',
         ]),
     },
-    keyFields: ['id'],
+    keys: ['id'],
 });
 console.log('columns:', differ.getColumns());
 for (const rowDiff of differ) {
@@ -181,7 +214,7 @@ import { diff } from 'tabular-data-differ';
 const stats = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    keyFields: ['id'],
+    keys: ['id'],
 }).to({
     filter: (rowDiff) => rowDiff.status !== 'deleted',
 });
@@ -195,7 +228,7 @@ import { diff } from 'tabular-data-differ';
 const differ = diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    keyFields: ['id'],
+    keys: ['id'],
 });
 const catIdx = differ.getColumns().indexOf('CATEGORY');
 const stats = differ.to({
@@ -229,16 +262,24 @@ keepSameRows | no     | false       | specifies if the output should also contai
 changeLimit  | no     |             | specifies a maximum number of differences that should be outputted.
 labels       | no     |             | a dictionary of key/value that allows to add custom metadata to the generated file.
 
+### Key options (ColumnDefinition)
+
+Name     |Required|Default value|Description
+---------|--------|-------------|-----------
+name     | yes    |             | the name of the column.
+comparer | no     | string      | either a standard comparer ('string' or 'number') or a custom comparer.
+order    | no     | ASC         | specifies if the column is in ascending (ASC) or descending (DESC) order.
+
 ### Differ options
 
 Name            |Required|Default value|Description
 ----------------|--------|-------------|-----------
 oldSource       | yes    |             | either a string filename or a SourceOptions
 newSource       | yes    |             | either a string filename or a SourceOptions
-keyFields       | yes    |             | the list of columns that form the primary key. This is required for comparing the rows.
-includedFields  | no     |             | the list of columns to keep from the input files. If not specified, all columns are selected.
-excludedFields  | no     |             | the list of columns to exclude from the input files.
-descendingOrder | no     | false       | specifies if the input files are in descending order.
+keys            | yes    |             | the list of columns that form the primary key. This is required for comparing the rows. A key can be a string name or a {ColumnDefinition}
+includedColumns | no     |             | the list of columns to keep from the input sources. If not specified, all columns are selected.
+excludedColumns | no     |             | the list of columns to exclude from the input sources.
+rowComparer     | no     |             | specifies a custom row comparer.
 
 ### diff function
 
