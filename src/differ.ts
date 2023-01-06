@@ -243,7 +243,7 @@ export function convertJsonObjToRow(obj: any, columns: string[]): Row | undefine
     if (obj === null || obj === undefined) {
         return undefined;
     }
-    const row = columns.map(col => obj[col]);
+    const row = columns.map(col => `${obj[col]}`);
     return row;
 }
 

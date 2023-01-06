@@ -251,7 +251,22 @@ describe('differ', () => {
             expect(() => {
                 reader.readRow();
             }).toThrowError('Expected to find a JSON object');
-        });        
+        });
+        test('should convert object values to string', () => {
+            const stream = new ArrayInputStream([
+                '[{"id": 1,"a":"a1","b":true,"c":3.14}]',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'true', '3.14']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+
     });
     describe('formatting', () => {
         test('a,b,c', () => {
