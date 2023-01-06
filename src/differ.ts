@@ -212,6 +212,92 @@ export class CsvStreamReader implements StreamReader {
     }
 }
 
+export function parseJsonObj(line?: string) {
+    if (line === undefined) {
+        return undefined;
+    }
+    let text = line.trim();
+    if (text.startsWith('[')) {
+        text = text.substring(1);
+    }
+    if (text.endsWith(']')) {
+        text = text.substring(0, text.length - 1);
+    }
+    if (text.startsWith(',')) {
+        text = text.substring(1);
+    }
+    if (text.endsWith(',')) {
+        text = text.substring(0, text.length - 1);
+    }
+    if (text === '') {
+        return undefined;
+    }
+    if (text.startsWith('{') && text.endsWith('}')) {
+        const obj = JSON.parse(text);
+        return obj;
+    }
+    throw new Error('Expected to find a JSON object');
+}
+
+export function convertJsonObjToRow(obj: any, columns: string[]): Row | undefined {
+    if (obj === null || obj === undefined) {
+        return undefined;
+    }
+    const row = columns.map(col => obj[col]);
+    return row;
+}
+
+export class JsonStreamReader implements StreamReader {
+    private readonly stream: InputStream;
+    private headerObj: any;
+    private columns: string[] = [];
+
+    constructor(options: StreamReaderOptions) {
+        this.stream = options.stream;
+    }
+
+    open(): void {
+        this.stream.open();
+        this.headerObj = null;
+        this.columns = [];
+    }
+
+    readHeader(): StreamReaderHeader {
+        let line = this.stream.readLine();
+        this.headerObj = parseJsonObj(line);
+        if (!this.headerObj) {
+            // if the obj is undefined, it might mean that we just started an array with a single line containing '['
+            // so, process the next line
+            line = this.stream.readLine();
+            this.headerObj = parseJsonObj(line);
+        }
+        if (!this.headerObj) {
+            throw new Error('Expected to find at least one object');
+        }
+        this.columns = Object.keys(this.headerObj);
+        return {
+            columns: this.columns,
+        };
+    }
+
+    readRow(): Row | undefined {
+        if (this.headerObj) {
+            const row = convertJsonObjToRow(this.headerObj, this.columns);
+            this.headerObj = null;
+            return row;
+        }
+        const line = this.stream.readLine();
+        const obj = parseJsonObj(line);
+        const row = convertJsonObjToRow(obj, this.columns);
+
+        return row;
+    }
+
+    close(): void {
+        this.stream.close();        
+    }
+}
+
 const defaultStatusColumnName = 'DIFF_STATUS';
 
 export class CsvStreamWriter implements StreamWriter{
@@ -535,7 +621,7 @@ function createStreamReader(options: SourceOptions): StreamReader {
         return new CsvStreamReader(readerOptions);
     } 
     if (options.format === 'json') {
-        throw new Error('not implemented');
+        return new JsonStreamReader(readerOptions);
     }
     if (options.format !== undefined) {
         return options.format(readerOptions);

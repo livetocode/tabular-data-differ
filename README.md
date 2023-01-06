@@ -341,6 +341,42 @@ Enumerates the differences between the old and new sources.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
 
+### JSON input format
+
+This library implements a simplistic JSON parser with a couple of assumptions:
+- each JSON object should be saved on a distinct line
+- the JSON file should only contain an array of objects
+- each object should be flat (no nested JSON objects)
+- all objects should share the same properties
+- the lines can be indented
+- each object can have either a preceding or a trailing comma
+- the array start ([) and end (]) can be inlined with the first/last object or their own separate line
+
+#### Examples
+
+```json
+[
+    {"id": "01","a":"a1","b":"b1","c":"c1"},
+    {"id": "02","a":"a2","b":"b2","c":"c2"},
+    {"id": "03","a":"a3","b":"b3","c":"c3"}
+]
+```
+
+```json
+[{"id": "01","a":"a1","b":"b1","c":"c1"},
+{"id": "02","a":"a2","b":"b2","c":"c2"},
+{"id": "03","a":"a3","b":"b3","c":"c3"}]
+```
+
+```json
+[
+    {"id": "01","a":"a1","b":"b1","c":"c1"}
+    ,{"id": "02","a":"a2","b":"b2","c":"c2"}
+    ,{"id": "03","a":"a3","b":"b3","c":"c3"}
+]
+```
+
+
 ### CSV output format
 
 This is a standard CSV format, using the specified character for delimiting fields or the default one (comma).

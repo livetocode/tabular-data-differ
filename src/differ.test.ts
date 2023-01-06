@@ -1,6 +1,6 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, StreamWriterFooter, StreamWriterHeader, UnorderedStreamsError, NullOutputStream, CsvStreamReader, CsvStreamWriter } from './differ';
+import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, StreamWriterFooter, StreamWriterHeader, UnorderedStreamsError, NullOutputStream, CsvStreamReader, CsvStreamWriter, JsonStreamReader } from './differ';
 
 class FakeOutputWriter implements StreamWriter{
     public header?: StreamWriterHeader;
@@ -91,7 +91,168 @@ describe('differ', () => {
             const row = parseCsvLine(',', 'a,b,c,');
             expect(row).toEqual(['a', 'b', 'c', '']);
          });    
-       });
+    });
+    describe('JSON reader', () => {
+        test('single compact row', () => {
+            const stream = new ArrayInputStream([
+                '[{"id": "1","a":"a1","b":"b1","c":"c1"}]',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+        test('single indented row', () => {
+            const stream = new ArrayInputStream([
+                '[',
+                '  {"id": "1","a":"a1","b":"b1","c":"c1"}',
+                ']'
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+        test('inlined brackets, with trailing comma', () => {
+            const stream = new ArrayInputStream([
+                '[{"id": "1","a":"a1","b":"b1","c":"c1"},',
+                '{"id": "2","a":"a2","b":"b2","c":"c2"},',
+                '{"id": "3","a":"a3","b":"b3","c":"c3"}]',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            const row2 = reader.readRow();
+            expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
+            const row3 = reader.readRow();
+            expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+        test('outlined brackets, with trailing comma', () => {
+            const stream = new ArrayInputStream([
+                '[',
+                '  {"id": "1","a":"a1","b":"b1","c":"c1"},',
+                '  {"id": "2","a":"a2","b":"b2","c":"c2"},',
+                '  {"id": "3","a":"a3","b":"b3","c":"c3"}',
+                ']',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            const row2 = reader.readRow();
+            expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
+            const row3 = reader.readRow();
+            expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+        test('inlined brackets, with preceding comma', () => {
+            const stream = new ArrayInputStream([
+                '[{"id": "1","a":"a1","b":"b1","c":"c1"}',
+                ',{"id": "2","a":"a2","b":"b2","c":"c2"}',
+                ',{"id": "3","a":"a3","b":"b3","c":"c3"}]',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            const row2 = reader.readRow();
+            expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
+            const row3 = reader.readRow();
+            expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+        test('outlined brackets, with preceding comma', () => {
+            const stream = new ArrayInputStream([
+                '[',
+                '  {"id": "1","a":"a1","b":"b1","c":"c1"}',
+                '  ,{"id": "2","a":"a2","b":"b2","c":"c2"}',
+                '  ,{"id": "3","a":"a3","b":"b3","c":"c3"}',
+                ']',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            const header = reader.readHeader();
+            expect(header.columns).toEqual(['id','a','b','c']);
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            const row2 = reader.readRow();
+            expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
+            const row3 = reader.readRow();
+            expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
+            const done = reader.readRow();
+            expect(done).toBeUndefined();
+            reader.close();
+        });
+        test('empty string should fail', () => {
+            const stream = new ArrayInputStream([
+                '',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            expect(() => {
+                reader.readHeader();
+            }).toThrowError('Expected to find at least one object');
+        });        
+        test('empty stream should fail', () => {
+            const stream = new ArrayInputStream([]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            expect(() => {
+                reader.readHeader();
+            }).toThrowError('Expected to find at least one object');
+        });        
+        test('row should contain an object or fail, while reading the header', () => {
+            const stream = new ArrayInputStream([
+                '123',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            expect(() => {
+                reader.readHeader();
+            }).toThrowError('Expected to find a JSON object');
+        });        
+        test('row should contain an object or fail, while reading the header', () => {
+            const stream = new ArrayInputStream([
+                '[',
+                '  {"id": "1","a":"a1","b":"b1","c":"c1"},',
+                '  123,',
+                '  {"id": "3","a":"a3","b":"b3","c":"c3"}',
+                ']',
+            ]);
+            const reader = new JsonStreamReader({ stream });
+            reader.open();
+            reader.readHeader();
+            const row1 = reader.readRow();
+            expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
+            expect(() => {
+                reader.readRow();
+            }).toThrowError('Expected to find a JSON object');
+        });        
+    });
     describe('formatting', () => {
         test('a,b,c', () => {
             const txt = serializeRowAsCsvLine(['a', 'b', 'c']);
@@ -809,8 +970,6 @@ describe('differ', () => {
                 excludedColumns: ['AGE'],
             });
             expect(res.header?.columns).toEqual(['ID', 'NAME']);
-            console.log(res.diffs)
-            console.log(res.footer?.stats)
             expect(res.diffs).toEqual([
                 { delta: -1, status: 'deleted', oldRow: [ '2', 'rachel' ] }
             ]);
@@ -1872,7 +2031,6 @@ added	11	a11	b11	c11
 `);
         });    
         test('should read a JSON input file', () => {
-            expect(()=> {
             const stats = diff({
                 oldSource: {
                     stream: './tests/a.json',
@@ -1884,25 +2042,55 @@ added	11	a11	b11	c11
                 },
                 keys: ['id'],
             }).to('./output/files/output.csv');
-        }).toThrowError('not implemented');
-//             expect(stats).toEqual({
-//                 totalComparisons: 11,
-//                 totalChanges: 6,
-//                 changePercent: 54.55,
-//                 added: 2,
-//                 deleted: 3,
-//                 modified: 1,
-//                 same: 5        
-//             });
-//             const output = readAllText('./output/files/output.csv');
-//             expect(output).toBe(`DIFF_STATUS,id,a,b,c
-// deleted,01,a1,b1,c1
-// modified,04,aa4,bb4,cc4
-// deleted,05,a5,b5,c5
-// deleted,06,a6,b6,c6
-// added,10,a10,b10,c10
-// added,11,a11,b11,c11
-// `);
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
+        });        
+        test('should read a JSON and a CSV input file', () => {
+            const stats = diff({
+                oldSource: {
+                    stream: './tests/a.csv',
+                    format: 'csv',
+                },
+                newSource: {
+                    stream: './tests/b.json',
+                    format: 'json',
+                },
+                keys: ['id'],
+            }).to('./output/files/output.csv');
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
         });        
         test('should display output on the console', () => {
             const stats = diff({
@@ -2084,8 +2272,6 @@ added,11,a11,b11,c11
             const output = readAllText('./output/files/output.csv');
             expect(ctx.isOpen).toBeFalsy();
             expect(ctx.columns).toEqual(['CODE', 'VERSION', 'NAME', 'CATEGORY', 'PRICE']);
-            console.log(output)
-            console.log(stats)
             expect(output).toBe(`DIFF_STATUS,CODE,VERSION,NAME,CATEGORY,PRICE,OLD_CODE,OLD_VERSION,OLD_NAME,OLD_CATEGORY,OLD_PRICE
 added,apple,3,Apple,Fruit,0.4,,,,,
 modified,banana,1,Banana,Fruit,0.25,banana,1,Bannana,Fruit,0.25
