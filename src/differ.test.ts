@@ -1,20 +1,20 @@
 import fs from 'fs';
 import {describe, expect, test} from '@jest/globals';
-import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, StreamWriter, StreamWriterFooter, StreamWriterHeader, UnorderedStreamsError, NullOutputStream, CsvStreamReader, CsvStreamWriter, JsonStreamReader } from './differ';
+import { defaultRowComparer, diff, Differ, parseCsvLine, Column, serializeRowAsCsvLine, DifferOptions, FileOutputStream, ArrayInputStream, FileInputStream, RowDiff, FormatWriter, FormatFooter, UnorderedStreamsError, NullOutputStream, CsvFormatReader, JsonFormatReader, FormatHeader } from './differ';
 
-class FakeOutputWriter implements StreamWriter{
-    public header?: StreamWriterHeader;
+class FakeFormatWriter implements FormatWriter{
+    public header?: FormatHeader;
     public diffs: RowDiff[] = [];
-    public footer?: StreamWriterFooter;
+    public footer?: FormatFooter;
 
     open(): void {}
-    writeHeader(header: StreamWriterHeader): void {
+    writeHeader(header: FormatHeader): void {
         this.header = header;
     }
     writeDiff(rowDiff: RowDiff): void {
         this.diffs.push(rowDiff);
     }
-    writeFooter(footer: StreamWriterFooter): void {
+    writeFooter(footer: FormatFooter): void {
        this.footer = footer;
     }
     close(): void {}
@@ -27,8 +27,8 @@ type DiffOptions = Omit<DifferOptions, "oldSource" | "newSource"> & {
     changeLimit?: number,
 };
 
-function diffStrings(options: DiffOptions): FakeOutputWriter {
-    const result = new FakeOutputWriter();
+function diffStrings(options: DiffOptions): FakeFormatWriter {
+    const writer = new FakeFormatWriter();
     diff({
         ...options,
         oldSource: { 
@@ -38,11 +38,11 @@ function diffStrings(options: DiffOptions): FakeOutputWriter {
             stream: new ArrayInputStream(options.newLines),
         },
     }).to({
-        format: (_options) => result,
+        format: (_options) => writer,
         keepSameRows: options.keepSameRows,
         changeLimit: options.changeLimit,
     });
-    return result;
+    return writer;
 }
 
 function readAllText(path: string): string {
@@ -97,7 +97,7 @@ describe('differ', () => {
             const stream = new ArrayInputStream([
                 '[{"id": "1","a":"a1","b":"b1","c":"c1"}]',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -113,7 +113,7 @@ describe('differ', () => {
                 '  {"id": "1","a":"a1","b":"b1","c":"c1"}',
                 ']'
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -129,7 +129,7 @@ describe('differ', () => {
                 '{"id": "2","a":"a2","b":"b2","c":"c2"},',
                 '{"id": "3","a":"a3","b":"b3","c":"c3"}]',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -151,7 +151,7 @@ describe('differ', () => {
                 '  {"id": "3","a":"a3","b":"b3","c":"c3"}',
                 ']',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -171,7 +171,7 @@ describe('differ', () => {
                 ',{"id": "2","a":"a2","b":"b2","c":"c2"}',
                 ',{"id": "3","a":"a3","b":"b3","c":"c3"}]',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -193,7 +193,7 @@ describe('differ', () => {
                 '  ,{"id": "3","a":"a3","b":"b3","c":"c3"}',
                 ']',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -211,7 +211,7 @@ describe('differ', () => {
             const stream = new ArrayInputStream([
                 '',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             expect(() => {
                 reader.readHeader();
@@ -219,7 +219,7 @@ describe('differ', () => {
         });        
         test('empty stream should fail', () => {
             const stream = new ArrayInputStream([]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             expect(() => {
                 reader.readHeader();
@@ -229,7 +229,7 @@ describe('differ', () => {
             const stream = new ArrayInputStream([
                 '123',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             expect(() => {
                 reader.readHeader();
@@ -243,7 +243,7 @@ describe('differ', () => {
                 '  {"id": "3","a":"a3","b":"b3","c":"c3"}',
                 ']',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             reader.readHeader();
             const row1 = reader.readRow();
@@ -256,7 +256,7 @@ describe('differ', () => {
             const stream = new ArrayInputStream([
                 '[{"id": 1,"a":"a1","b":true,"c":3.14}]',
             ]);
-            const reader = new JsonStreamReader({ stream });
+            const reader = new JsonFormatReader({ stream });
             reader.open();
             const header = reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
@@ -1726,7 +1726,7 @@ describe('differ', () => {
             });
         });
         test('should work with real source files (CSV)', () => {
-            const output = new FakeOutputWriter();
+            const output = new FakeFormatWriter();
             const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
@@ -1760,7 +1760,7 @@ describe('differ', () => {
             });
         });
         test('should work with real source files (TSV)', () => {
-            const output = new FakeOutputWriter();
+            const output = new FakeFormatWriter();
             const differ = new Differ({
                 oldSource: {
                     stream: './tests/a.tsv',
@@ -1832,7 +1832,7 @@ added,11,a11,b11,c11
                 },
                 newSource: {
                     stream: './tests/b.csv',
-                    format: (options) => new CsvStreamReader(options),
+                    format: (options) => new CsvFormatReader(options),
                 },
                 keys: ['id'],
             }).to({

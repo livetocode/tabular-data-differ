@@ -76,24 +76,24 @@ export interface InputStream {
     close(): void;
 }
 
-export interface StreamReaderOptions {
+export interface FormatReaderOptions {
     stream: InputStream;
     delimiter?: string;
 }
 
-export interface StreamReaderHeader {
+export interface FormatHeader {
     columns: string[];
     labels?: Record<string, string>;
 }
 
-export interface StreamReader {
+export interface FormatReader {
     open(): void;
-    readHeader(): StreamReaderHeader;
+    readHeader(): FormatHeader;
     readRow(): Row | undefined;
     close(): void;
 }
 
-export type StreamReaderFactory = (options: StreamReaderOptions) => StreamReader;
+export type FormatReaderFactory = (options: FormatReaderOptions) => FormatReader;
 
 export interface OutputStream {
     open(): void;
@@ -101,30 +101,25 @@ export interface OutputStream {
     close(): void;
 }
 
-export interface StreamWriterOptions {
+export interface FormatWriterOptions {
     stream: OutputStream;
     delimiter?: string;
     keepOldValues?: boolean;
 }
 
-export interface StreamWriterHeader {
-    columns: string[];
-    labels?: Record<string, string>;
-}
-
-export interface StreamWriterFooter {
+export interface FormatFooter {
     stats: DiffStats;
 }
 
-export interface StreamWriter {
+export interface FormatWriter {
     open(): void;
-    writeHeader(header: StreamWriterHeader): void;
+    writeHeader(header: FormatHeader): void;
     writeDiff(rowDiff: RowDiff): void;
-    writeFooter(footer: StreamWriterFooter): void;
+    writeFooter(footer: FormatFooter): void;
     close(): void;
 }
 
-export type StreamWriterFactory = (options: StreamWriterOptions) => StreamWriter;
+export type FormatWriterFactory = (options: FormatWriterOptions) => FormatWriter;
 
 
 export class FileInputStream implements InputStream {
@@ -184,11 +179,11 @@ export class ArrayInputStream implements InputStream {
     }
 }
 
-export class CsvStreamReader implements StreamReader {
+export class CsvFormatReader implements FormatReader {
     private readonly stream: InputStream;
     private readonly delimiter: string;
 
-    constructor(options: StreamReaderOptions) {
+    constructor(options: FormatReaderOptions) {
         this.stream = options.stream;
         this.delimiter = options.delimiter ?? ',';
     }
@@ -197,7 +192,7 @@ export class CsvStreamReader implements StreamReader {
         this.stream.open();
     }
 
-    readHeader(): StreamReaderHeader {
+    readHeader(): FormatHeader {
         return {
             columns: parseCsvLine(this.delimiter, this.stream.readLine()) ?? [],
         };
@@ -247,12 +242,12 @@ export function convertJsonObjToRow(obj: any, columns: string[]): Row | undefine
     return row;
 }
 
-export class JsonStreamReader implements StreamReader {
+export class JsonFormatReader implements FormatReader {
     private readonly stream: InputStream;
     private headerObj: any;
     private columns: string[] = [];
 
-    constructor(options: StreamReaderOptions) {
+    constructor(options: FormatReaderOptions) {
         this.stream = options.stream;
     }
 
@@ -262,7 +257,7 @@ export class JsonStreamReader implements StreamReader {
         this.columns = [];
     }
 
-    readHeader(): StreamReaderHeader {
+    readHeader(): FormatHeader {
         let line = this.stream.readLine();
         this.headerObj = parseJsonObj(line);
         if (!this.headerObj) {
@@ -300,12 +295,12 @@ export class JsonStreamReader implements StreamReader {
 
 const defaultStatusColumnName = 'DIFF_STATUS';
 
-export class CsvStreamWriter implements StreamWriter{
+export class CsvFormatWriter implements FormatWriter{
     private readonly stream: OutputStream;
     private readonly delimiter: string;
     private readonly keepOldValues: boolean;
 
-    constructor(options: StreamWriterOptions) {
+    constructor(options: FormatWriterOptions) {
         this.stream = options.stream;
         this.delimiter = options.delimiter ?? ',';
         this.keepOldValues = options.keepOldValues ?? false;
@@ -315,7 +310,7 @@ export class CsvStreamWriter implements StreamWriter{
         this.stream.open();        
     }
 
-    writeHeader(header: StreamWriterHeader): void {
+    writeHeader(header: FormatHeader): void {
         const columns = [defaultStatusColumnName, ...header.columns];
         if (this.keepOldValues) {
             columns.push(...header.columns.map(col => 'OLD_' + col));
@@ -348,7 +343,7 @@ export class CsvStreamWriter implements StreamWriter{
         }
     }
 
-    writeFooter(footer: StreamWriterFooter): void {
+    writeFooter(footer: FormatFooter): void {
     }
 
     close(): void {
@@ -356,12 +351,12 @@ export class CsvStreamWriter implements StreamWriter{
     }
 }
 
-export class JsonStreamWriter implements StreamWriter{
+export class JsonFormatWriter implements FormatWriter{
     private readonly stream: OutputStream;
     private readonly keepOldValues: boolean;
     private rowCount: number = 0;
 
-    constructor(options: StreamWriterOptions) {
+    constructor(options: FormatWriterOptions) {
         this.stream = options.stream;
         this.keepOldValues = options.keepOldValues ?? false;
     }
@@ -370,7 +365,7 @@ export class JsonStreamWriter implements StreamWriter{
         this.stream.open();    
     }
 
-    writeHeader(header: StreamWriterHeader): void {
+    writeHeader(header: FormatHeader): void {
         this.rowCount = 0;
         const h = JSON.stringify(header);
         this.stream.writeLine(`{ "header": ${h}, "items": [`);
@@ -395,7 +390,7 @@ export class JsonStreamWriter implements StreamWriter{
         this.stream.writeLine(separator + JSON.stringify(record));
     }
 
-    writeFooter(footer: StreamWriterFooter): void {
+    writeFooter(footer: FormatFooter): void {
         this.stream.writeLine(`], "footer": ${JSON.stringify(footer)}}`);
     }
 
@@ -404,18 +399,18 @@ export class JsonStreamWriter implements StreamWriter{
     }
 }
 
-export class NullStreamWriter implements StreamWriter {
+export class NullFormatWriter implements FormatWriter {
     open(): void {
         
     }
 
-    writeHeader(header: StreamWriterHeader): void {
+    writeHeader(header: FormatHeader): void {
     }
 
     writeDiff(rowDiff: RowDiff): void {
     }
 
-    writeFooter(footer: StreamWriterFooter): void {
+    writeFooter(footer: FormatFooter): void {
     }
 
     close(): void {
@@ -481,10 +476,10 @@ export interface SourceOptions {
      */
     stream: Filename | InputStream;
     /**
-     * Specifies the format of the input stream, either providing a standard format (csv or json) or your factory function for producing a custom StreamReader instance. 
+     * Specifies the format of the input stream, either providing a standard format (csv or json) or your factory function for producing a custom FormatReader instance. 
      * Defaults to 'csv'.
      */
-    format?: 'csv' | 'json' | StreamReaderFactory; // Defaults to CSV
+    format?: 'csv' | 'json' | FormatReaderFactory;
     /**
      * Specifies the char delimiting the fields in a row.
      * Defaults to ','. 
@@ -510,7 +505,7 @@ export interface OutputOptions {
      * Specifies an existing format (csv or json) or a factory function to create your own format.
      * Defaults to 'csv'.
      */
-    format?: 'csv' | 'json' | StreamWriterFactory;
+    format?: 'csv' | 'json' | FormatWriterFactory;
     /**
      * Specifies the char delimiting the fields in a row.
      * Defaults to ','. 
@@ -611,59 +606,59 @@ function createInputStream(options: SourceOptions): InputStream {
     return options.stream;
 }
 
-function createStreamReader(options: SourceOptions): StreamReader {
+function createFormatReader(options: SourceOptions): FormatReader {
     const stream = createInputStream(options);
-    const readerOptions: StreamReaderOptions = { 
+    const readerOptions: FormatReaderOptions = { 
         stream, 
         delimiter: options.delimiter,
     };
     if (options.format === 'csv') {
-        return new CsvStreamReader(readerOptions);
+        return new CsvFormatReader(readerOptions);
     } 
     if (options.format === 'json') {
-        return new JsonStreamReader(readerOptions);
+        return new JsonFormatReader(readerOptions);
     }
     if (options.format !== undefined) {
         return options.format(readerOptions);
     }
-    return new CsvStreamReader(readerOptions);    
+    return new CsvFormatReader(readerOptions);    
 }
 
 interface Source {
-    reader: StreamReader;
+    format: FormatReader;
 }
 
 function createSource(value: Filename | SourceOptions): Source {
     if (typeof value === 'string') {
         return { 
-            reader: new CsvStreamReader({ stream: new FileInputStream(value) }) 
+            format: new CsvFormatReader({ stream: new FileInputStream(value) }) 
         };
     }
     return { 
-        reader: createStreamReader(value), 
+        format: createFormatReader(value), 
     };
 }
 
-function createStreamWriter(options: OutputOptions): StreamWriter {
+function createFormatWriter(options: OutputOptions): FormatWriter {
     const stream = createOutputStream(options);
-    const writerOptions: StreamWriterOptions = { 
+    const writerOptions: FormatWriterOptions = { 
         stream, 
         delimiter: options.delimiter,
         keepOldValues: options.keepOldValues,
     };
     if (options.format === 'csv') {
-        return new CsvStreamWriter(writerOptions);
+        return new CsvFormatWriter(writerOptions);
     }
     if (options.format === 'json') {
-        return new JsonStreamWriter(writerOptions);
+        return new JsonFormatWriter(writerOptions);
     }
     if (options.format !== undefined) {
         return options.format(writerOptions);
     }
     if (options.stream === 'null') {
-        return new NullStreamWriter();
+        return new NullFormatWriter();
     }
-    return new CsvStreamWriter(writerOptions);
+    return new CsvFormatWriter(writerOptions);
 }
 
 function createOutputStream(options: OutputOptions): OutputStream {
@@ -683,23 +678,23 @@ function createOutputStream(options: OutputOptions): OutputStream {
 }
 
 function createOutput(value: 'console' | 'null' | Filename | OutputOptions): { 
-    writer: StreamWriter, 
+    format: FormatWriter, 
     filter?: RowDiffFilter,
     keepSameRows?: boolean, 
     changeLimit?: number,
     labels?: Record<string, string>;
 } {
     if (value === 'console') {
-        return { writer: new CsvStreamWriter({ stream: new ConsoleOutputStream() }) };
+        return { format: new CsvFormatWriter({ stream: new ConsoleOutputStream() }) };
     }
     if (value === 'null') {
-        return { writer: new NullStreamWriter() };
+        return { format: new NullFormatWriter() };
     }
     if (typeof value === 'string') {
-        return { writer: new CsvStreamWriter({ stream: new FileOutputStream(value) }) };
+        return { format: new CsvFormatWriter({ stream: new FileOutputStream(value) }) };
     }
     return { 
-        writer: createStreamWriter(value), 
+        format: createFormatWriter(value), 
         filter: value.filter, 
         keepSameRows: value.keepSameRows, 
         changeLimit: value.changeLimit,
@@ -769,8 +764,8 @@ export class DifferContext {
     [OpenSymbol](): void {
         if (!this._isOpen) {
             this._isOpen = true;
-            this.oldSource.reader.open();
-            this.newSource.reader.open();
+            this.oldSource.format.open();
+            this.newSource.format.open();
             this.extractHeaders();
         }
     }
@@ -782,8 +777,8 @@ export class DifferContext {
      */
     close(): void {
         if (this._isOpen) {
-            this.newSource.reader.close();
-            this.oldSource.reader.close();
+            this.newSource.format.close();
+            this.oldSource.format.close();
             this._isOpen = false;
         }
         this._isClosed = true;
@@ -831,9 +826,9 @@ export class DifferContext {
      to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
         const stats = new DiffStats();
         const output = createOutput(options);
-        output.writer.open();
+        output.format.open();
         try {
-            output.writer.writeHeader({
+            output.format.writeHeader({
                 columns: this.columns,
                 labels: output.labels,
             });
@@ -844,15 +839,15 @@ export class DifferContext {
                 }
                 let canWriteDiff = output.keepSameRows === true || rowDiff.status !== 'same';
                 if (isValidDiff && canWriteDiff) { 
-                    output.writer.writeDiff(rowDiff);
+                    output.format.writeDiff(rowDiff);
                 }
                 if (typeof output.changeLimit === 'number' && stats.totalChanges >= output.changeLimit) {
                     break;
                 }
             }    
-            output.writer.writeFooter({ stats: stats });
+            output.format.writeFooter({ stats: stats });
         } finally {
-            output.writer.close();
+            output.format.close();
         }
         return stats;
     }
@@ -920,8 +915,8 @@ export class DifferContext {
     }
 
     private extractHeaders() {
-        const oldHeader = this.oldSource.reader.readHeader();
-        const newHeader = this.newSource.reader.readHeader();
+        const oldHeader = this.oldSource.format.readHeader();
+        const newHeader = this.newSource.format.readHeader();
         if (oldHeader.columns.length === 0) {
             throw new Error('Expected to find columns in old source');
         }
@@ -983,11 +978,11 @@ export class DifferContext {
     }
 
     private getNextOldRow(): Row | undefined {
-        return this.oldSource.reader.readRow();
+        return this.oldSource.format.readRow();
     }
 
     private getNextNewRow(): Row | undefined {
-        return this.newSource.reader.readRow();
+        return this.newSource.format.readRow();
     }
 
     private getNextPair(): RowPair {
