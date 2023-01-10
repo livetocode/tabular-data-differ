@@ -2,7 +2,7 @@
 
 A very efficient library for diffing two **sorted** streams of tabular data, such as CSV files.
 
-Keywords:
+### Keywords
 - table
 - tabular data
 - CSV
@@ -13,6 +13,16 @@ Keywords:
 - changes
 - comparison
 
+### Table of content
+
+- [**Why another lib?**](#why-another-lib)
+- [**Features**](#features)
+- [**Points of interest**](#points-of-interest)
+- [**Algorithm complexity**](#algorithm-complexity)
+- [**Usage**](#usage)
+- [**Documentation**](#documentation)
+- [**Development**](#development)
+
 # Why another lib?
 
 Most of the diffing libraries either load all the data in memory for comparison or would at least load the keys and store some hash on the data.
@@ -21,6 +31,8 @@ Also, those strategies require a two-pass approach for diffing which is more exp
 
 This library requires that the submitted files are already sorted by some primary key to compare the two streams in a single pass, 
 while loading at most two rows of data in memory.
+
+If your data is not already sorted, you can use my other lib https://github.com/livetocode/huge-csv-sorter, which can sort a huge file very efficiently thanks to SQLite.
 
 This allows us to diff two 600MB files containing 4 millions of rows in 10 seconds on my MacBook Pro.
 
@@ -244,7 +256,100 @@ const stats = ctx.to({
 console.log(stats);
 ```
 
-## Documentation
+### Order 2 CSV files and diff them on the console
+
+```Typescript
+import { diff } from 'tabular-data-differ';
+import { sort } from 'huge-csv-sorter';
+
+await sort({
+    source: './tests/a.csv',
+    destination: './tests/a.sorted.csv',
+    orderBy: ['id'],
+});
+
+await sort({
+    source: './tests/b.csv',
+    destination: './tests/b.sorted.csv',
+    orderBy: ['id'],
+});
+
+const stats = diff({
+    oldSource: './tests/a.sorted.csv',
+    newSource: './tests/b.sorted.csv',
+    keys: ['id'],
+}).to('console');
+console.log(stats);
+```
+
+### Auto-correct unordered CSV files and retry diff
+
+```Typescript
+import { diff } from 'tabular-data-differ';
+import { sort } from 'huge-csv-sorter';
+
+
+try {
+    // try diff
+    const stats = diff({
+        oldSource: './tests/a.csv',
+        newSource: './tests/b.csv',
+        keys: ['id'],
+    }).to('./tests/diff.csv');
+    console.log(stats);
+} catch(err) {
+    // catch unordered exception
+    if (err instanceof UnorderedStreamsError) {
+        // sort files
+        await sort({
+            source: './tests/a.csv',
+            destination: './tests/a.sorted.csv',
+            orderBy: ['id'],
+        });
+
+        await sort({
+            source: './tests/b.csv',
+            destination: './tests/b.sorted.csv',
+            orderBy: ['id'],
+        });
+        // retry diff
+        const stats = diff({
+            oldSource: './tests/a.sorted.csv',
+            newSource: './tests/b.sorted.csv',
+            keys: ['id'],
+        }).to('./tests/diff.csv');
+        console.log(stats);
+    } else {
+        throw err;
+    }
+}
+
+await sort({
+    source: './tests/a.csv',
+    destination: './tests/a.sorted.csv',
+    orderBy: ['id'],
+});
+
+await sort({
+    source: './tests/b.csv',
+    destination: './tests/b.sorted.csv',
+    orderBy: ['id'],
+});
+
+const stats = diff({
+    oldSource: './tests/a.sorted.csv',
+    newSource: './tests/b.sorted.csv',
+    keys: ['id'],
+}).to('console');
+console.log(stats);
+```
+
+# Documentation
+
+- [**API**](#api)
+- [**File formats**](#file-formats)
+
+## API
 
 ### Source options
 
@@ -376,6 +481,7 @@ This library implements a simplistic JSON parser with a couple of assumptions:
 ]
 ```
 
+## File formats
 
 ### CSV output format
 
