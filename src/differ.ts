@@ -41,7 +41,7 @@ export interface RowPair {
     newRow?: Row;
 }
 
-export type RowPairProvider = () => RowPair;
+export type RowPairProvider = () => Promise<RowPair>;
 
 /** 
  * A string containing a filename 
@@ -287,9 +287,9 @@ export class Differ {
     constructor(private options: DifferOptions) {
     }
 
-    start(): DifferContext {
+    async start(): Promise<DifferContext> {
         const ctx = new DifferContext(this.options);
-        ctx[OpenSymbol]();
+        await ctx[OpenSymbol]();
         return ctx;
     }
 
@@ -309,8 +309,8 @@ export class Differ {
      * }).to('console');
      * console.log(stats);
      */
-    to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
-        const ctx = this.start();
+    async to(options: 'console' | 'null' | Filename | OutputOptions): Promise<DiffStats> {
+        const ctx = await this.start();
         return ctx.to(options);
     }    
 }
@@ -341,12 +341,12 @@ export class DifferContext {
      * Opens the input streams (old and new) and reads the nam.
      * This is an internal method that will be automatically called by "Differ.start" method.
      */
-    [OpenSymbol](): void {
+    async [OpenSymbol](): Promise<void> {
         if (!this._isOpen) {
             this._isOpen = true;
-            this.oldSource.format.open();
-            this.newSource.format.open();
-            this.extractHeaders();
+            await this.oldSource.format.open();
+            await this.newSource.format.open();
+            await this.extractHeaders();
         }
     }
 
@@ -403,31 +403,31 @@ export class DifferContext {
      * }).to('console');
      * console.log(stats);
      */
-     to(options: 'console' | 'null' | Filename | OutputOptions): DiffStats {
+     async to(options: 'console' | 'null' | Filename | OutputOptions): Promise<DiffStats> {
         const stats = new DiffStats();
         const output = createOutput(options);
-        output.format.open();
+        await output.format.open();
         try {
-            output.format.writeHeader({
+            await output.format.writeHeader({
                 columns: this.columns,
                 labels: output.labels,
             });
-            for (const rowDiff of this.diffs()) {
+            for await (const rowDiff of this.diffs()) {
                 let isValidDiff = output.filter?.(rowDiff) ?? true;
                 if (isValidDiff) {
                     stats.add(rowDiff);
                 }
                 let canWriteDiff = output.keepSameRows === true || rowDiff.status !== 'same';
                 if (isValidDiff && canWriteDiff) { 
-                    output.format.writeDiff(rowDiff);
+                    await output.format.writeDiff(rowDiff);
                 }
                 if (typeof output.changeLimit === 'number' && stats.totalChanges >= output.changeLimit) {
                     break;
                 }
             }    
-            output.format.writeFooter({ stats: stats });
+            await output.format.writeFooter({ stats: stats });
         } finally {
-            output.format.close();
+            await output.format.close();
         }
         return stats;
     }
@@ -461,7 +461,7 @@ export class DifferContext {
      * }
      * console.log('stats:', ctx.getStats());
      */
-    *diffs() {
+    async *diffs() {
         if (this._isClosed) {
             throw new Error('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
         }
@@ -469,7 +469,7 @@ export class DifferContext {
             let pairProvider: RowPairProvider = () => this.getNextPair();
             let previousPair: RowPair = {}
             while (true) {
-                const pair = pairProvider();
+                const pair = await pairProvider();
 
                 if (pair.oldRow === undefined && pair.newRow === undefined) {
                     break;
@@ -484,9 +484,9 @@ export class DifferContext {
                 if (rowDiff.delta === 0) {
                     pairProvider = () => this.getNextPair();
                 } else if (rowDiff.delta > 0) {
-                    pairProvider = () => ({ oldRow: pair.oldRow, newRow: this.getNextNewRow() });
+                    pairProvider = async () => ({ oldRow: pair.oldRow, newRow: await this.getNextNewRow() });
                 } else {
-                    pairProvider = () => ({ oldRow: this.getNextOldRow(), newRow: pair.newRow });
+                    pairProvider = async () => ({ oldRow: await this.getNextOldRow(), newRow: pair.newRow });
                 }
             }
         } finally {
@@ -494,9 +494,9 @@ export class DifferContext {
         }
     }
 
-    private extractHeaders() {
-        const oldHeader = this.oldSource.format.readHeader();
-        const newHeader = this.newSource.format.readHeader();
+    private async extractHeaders(): Promise<void> {
+        const oldHeader = await this.oldSource.format.readHeader();
+        const newHeader = await this.newSource.format.readHeader();
         if (oldHeader.columns.length === 0) {
             throw new Error('Expected to find columns in old source');
         }
@@ -557,17 +557,17 @@ export class DifferContext {
         return result;
     }
 
-    private getNextOldRow(): Row | undefined {
+    private getNextOldRow(): Promise<Row | undefined> {
         return this.oldSource.format.readRow();
     }
 
-    private getNextNewRow(): Row | undefined {
+    private getNextNewRow(): Promise<Row | undefined> {
         return this.newSource.format.readRow();
     }
 
-    private getNextPair(): RowPair {
-        const oldRow = this.getNextOldRow();
-        const newRow = this.getNextNewRow();
+    private async getNextPair():Promise<RowPair> {
+        const oldRow = await this.getNextOldRow();
+        const newRow = await this.getNextNewRow();
         return { oldRow, newRow };
     }
 

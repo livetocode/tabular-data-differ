@@ -34,7 +34,8 @@ while loading at most two rows of data in memory.
 
 If your data is not already sorted, you can use my other lib https://github.com/livetocode/huge-csv-sorter, which can sort a huge file very efficiently thanks to SQLite.
 
-This allows us to diff two 600MB files containing 4 millions of rows in 10 seconds on my MacBook Pro.
+This allows us to diff two 600MB files containing 2.6 millions of rows and 37 columns in 22 seconds on my MacBook Pro.
+Or two 250 MB files containing 4 millions of rows and 7 columns in 12 seconds.
 
 # Features
 
@@ -55,7 +56,8 @@ This allows us to diff two 600MB files containing 4 millions of rows in 10 secon
 - 100% code coverage
 - one single dependency on n-readlines
 - small composable objects
-- iterator for enumerating the changes
+- async streams
+- async iterator for enumerating the changes
 
 # Algorithm complexity
 
@@ -77,7 +79,7 @@ The average complexity, assuming a low rate of additions or deletions, should be
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: ['id'],
@@ -89,7 +91,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: [{
@@ -104,7 +106,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: [
@@ -122,7 +124,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     output: 'null',
@@ -135,7 +137,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: ['id'],
@@ -147,7 +149,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: ['id'],
@@ -162,7 +164,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: ['id'],
@@ -177,7 +179,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: {
         stream: './tests/b.tsv',
@@ -195,7 +197,7 @@ console.log(stats);
 
 ```Typescript
 import { diff, ArrayInputStream } from 'tabular-data-differ';
-const ctx = diff({
+const ctx = await diff({
     oldSource: {
         stream: new ArrayInputStream([
             'id,name',
@@ -213,7 +215,7 @@ const ctx = diff({
     keys: ['id'],
 }).start();
 console.log('columns:', ctx.columns);
-for (const rowDiff of ctx.diffs()) {
+for await (const rowDiff of ctx.diffs()) {
     console.log(rowDiff);
 }
 console.log('stats:', ctx.stats);
@@ -223,7 +225,7 @@ console.log('stats:', ctx.stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
     keys: ['id'],
@@ -237,7 +239,7 @@ console.log(stats);
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
-const ctx = diff({
+const ctx = await diff({
     oldSource: './tests/c.csv',
     newSource: './tests/d.csv',
     keys: [
@@ -249,7 +251,7 @@ const ctx = diff({
     ],
 }).start();
 const catIdx = ctx.columns.indexOf('CATEGORY');
-const stats = ctx.to({
+const stats = await ctx.to({
     stream: 'console',
     filter: (rowDiff) => ['Fruit', 'Meat'].includes(rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]),
 });
@@ -274,7 +276,7 @@ await sort({
     orderBy: ['id'],
 });
 
-const stats = diff({
+const stats = await diff({
     oldSource: './tests/a.sorted.csv',
     newSource: './tests/b.sorted.csv',
     keys: ['id'],
@@ -288,10 +290,9 @@ console.log(stats);
 import { diff } from 'tabular-data-differ';
 import { sort } from 'huge-csv-sorter';
 
-
 try {
     // try diff
-    const stats = diff({
+    const stats = await diff({
         oldSource: './tests/a.csv',
         newSource: './tests/b.csv',
         keys: ['id'],
@@ -313,7 +314,7 @@ try {
             orderBy: ['id'],
         });
         // retry diff
-        const stats = diff({
+        const stats = await diff({
             oldSource: './tests/a.sorted.csv',
             newSource: './tests/b.sorted.csv',
             keys: ['id'],
@@ -323,25 +324,6 @@ try {
         throw err;
     }
 }
-
-await sort({
-    source: './tests/a.csv',
-    destination: './tests/a.sorted.csv',
-    orderBy: ['id'],
-});
-
-await sort({
-    source: './tests/b.csv',
-    destination: './tests/b.sorted.csv',
-    orderBy: ['id'],
-});
-
-const stats = diff({
-    oldSource: './tests/a.sorted.csv',
-    newSource: './tests/b.sorted.csv',
-    keys: ['id'],
-}).to('console');
-console.log(stats);
 ```
 
 # Documentation

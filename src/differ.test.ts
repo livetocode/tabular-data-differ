@@ -9,17 +9,24 @@ class FakeFormatWriter implements FormatWriter{
     public diffs: RowDiff[] = [];
     public footer?: FormatFooter;
 
-    open(): void {}
-    writeHeader(header: FormatHeader): void {
+    open(): Promise<void> {
+        return Promise.resolve();
+    }
+    writeHeader(header: FormatHeader): Promise<void> {
         this.header = header;
+        return Promise.resolve();
     }
-    writeDiff(rowDiff: RowDiff): void {
+    writeDiff(rowDiff: RowDiff): Promise<void>  {
         this.diffs.push(rowDiff);
+        return Promise.resolve();
     }
-    writeFooter(footer: FormatFooter): void {
+    writeFooter(footer: FormatFooter): Promise<void>  {
        this.footer = footer;
+       return Promise.resolve();
     }
-    close(): void {}
+    close(): Promise<void> {
+        return Promise.resolve();
+    }
 }
 
 type DiffOptions = Omit<DifferOptions, "oldSource" | "newSource"> & {
@@ -29,9 +36,9 @@ type DiffOptions = Omit<DifferOptions, "oldSource" | "newSource"> & {
     changeLimit?: number,
 };
 
-function diffStrings(options: DiffOptions): FakeFormatWriter {
+async function diffStrings(options: DiffOptions): Promise<FakeFormatWriter> {
     const writer = new FakeFormatWriter();
-    diff({
+    await diff({
         ...options,
         oldSource: { 
             stream: new ArrayInputStream(options.oldLines) 
@@ -61,8 +68,8 @@ describe('differ', () => {
         }
     });
     describe('validation errors', () => {
-        test('should detect invalid ordering in ascending mode', () => {
-            expect(() => diffStrings({
+        test('should detect invalid ordering in ascending mode', async () => {
+            await expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -76,12 +83,12 @@ describe('differ', () => {
                     '2,rachel,22',
                 ],
                 keys: ['ID'],
-            })).toThrowError(`Expected rows to be ordered by \"ID ASC\" in new source but received:
+            })).rejects.toThrowError(`Expected rows to be ordered by \"ID ASC\" in new source but received:
   previous=3,dave,44
   current=2,rachel,22`);
         });        
-        test('should detect invalid ordering in descending mode', () => {
-            expect(() => diffStrings({
+        test('should detect invalid ordering in descending mode', async () => {
+            await expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '3,dave,44',
@@ -98,55 +105,55 @@ describe('differ', () => {
                     name: 'ID',
                     order: 'DESC',
                 }],
-            })).toThrowError(new UnorderedStreamsError(`Expected rows to be ordered by "ID DESC" in new source but received:
+            })).rejects.toThrowError(new UnorderedStreamsError(`Expected rows to be ordered by "ID DESC" in new source but received:
   previous=1,john,33
   current=2,rachel,22`));
         });        
-        test('should be able to execute twice', () => {
+        test('should be able to execute twice', async () => {
             const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             });
-            const stats1 = differ.to('./output/files/output.csv');
+            const stats1 = await differ.to('./output/files/output.csv');
             const output1= readAllText('./output/files/output.csv');
-            const stats2 = differ.to('./output/files/output.csv');
+            const stats2 = await differ.to('./output/files/output.csv');
             const output2= readAllText('./output/files/output.csv');
             expect(stats1.totalChanges).toBe(6);
             expect(stats2).toEqual(stats1);
             expect(output2).toEqual(output1);
         });         
-        test('should not open output file twice', () => {
+        test('should not open output file twice', async () => {
             const f = new FileOutputStream('./output/files/output.csv');
-            f.open();
+            await f.open();
             try {
-                expect(() => f.open()).toThrowError('file \"./output/files/output.csv\" is already open');
+                await expect(async () => await f.open()).rejects.toThrowError('file \"./output/files/output.csv\" is already open');
             } finally {
-                f.close();
+                await f.close();
             }
         });       
-        test('should have columns in old source', () => {
-            expect(() => diffStrings({
+        test('should have columns in old source', async () => {
+            await expect(() => diffStrings({
                 oldLines: [
                 ],
                 newLines: [
                     'ID,NAME,AGE',
                 ],
                 keys: ['ID'],
-            })).toThrowError('Expected to find columns in old source');
+            })).rejects.toThrowError('Expected to find columns in old source');
         });
-        test('should have columns in new source', () => {
-            expect(() => diffStrings({
+        test('should have columns in new source', async () => {
+            await expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
                 newLines: [
                 ],
                 keys: ['ID'],
-            })).toThrowError('Expected to find columns in new source');            
+            })).rejects.toThrowError('Expected to find columns in new source');            
         });
-        test('should find keys in old columns', () => {
-            expect(() => diffStrings({
+        test('should find keys in old columns', async () => {
+            await expect(() => diffStrings({
                 oldLines: [
                     'CODE,NAME,AGE',
                 ],
@@ -154,10 +161,10 @@ describe('differ', () => {
                     'ID,NAME,AGE',
                 ],
                 keys: ['ID'],
-            })).toThrowError(`Could not find key 'ID' in old stream`);            
+            })).rejects.toThrowError(`Could not find key 'ID' in old stream`);            
         });
-        test('should find keys in new columns', () => {
-            expect(() => diffStrings({
+        test('should find keys in new columns', async () => {
+            await expect(() => diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     'a1,a,33',
@@ -167,56 +174,65 @@ describe('differ', () => {
                     'a1,a,33',
                 ],
                 keys: ['ID'],
-            })).toThrowError(`Could not find key 'ID' in new stream`);            
+            })).rejects.toThrowError(`Could not find key 'ID' in new stream`);            
         });
-        test('should not allow calling diffs() twice', () => {
-            const ctx = diff({
+        test('should not allow calling diffs() twice', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).start();
-            const diffs = [...ctx.diffs()];
+            const diffs = [];
+            for await (const rowDiff of ctx.diffs()) {
+                diffs.push(rowDiff);
+            }
             expect(diffs.length).toBe(11);
             expect(ctx.isOpen).toBeFalsy();
-            expect(() => {
-                [...ctx.diffs()];
-            }).toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
+            await expect(async () => {
+                for await (const rowDiff of ctx.diffs()) {
+
+                }
+            }).rejects.toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
         });
-        test('should allow calling start() twice', () => {
+        test('should allow calling start() twice', async () => {
             const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             });
 
-            const ctx = differ.start();
+            const ctx = await differ.start();
             expect(ctx.isOpen).toBeTruthy();
-            const diffs = [...ctx.diffs()];
+            const diffs = [];
+            for await (const rowDiff of ctx.diffs()) {
+                diffs.push(rowDiff);
+            }
             expect(diffs.length).toBe(11);
             expect(ctx.isOpen).toBeFalsy();
 
-            const ctx2 = differ.start();
+            const ctx2 = await differ.start();
             expect(ctx2.isOpen).toBeTruthy();
             expect(ctx2).not.toBe(ctx);
-            const diffs2 = [...ctx2.diffs()];
+            const diffs2 = [];
+            for await (const rowDiff of ctx2.diffs()) {
+                diffs2.push(rowDiff);
+            }
             expect(ctx2.isOpen).toBeFalsy();
             expect(diffs2.length).toBe(11);
             expect(diffs2).toEqual(diffs);
         });
-        test('should not be able to read input streams after a close', () => {
+        test('should not be able to read input streams after a close', async () => {
             const stream = new FileInputStream('./tests/a.csv');
             stream.open();
-            const header = stream.readLine();
+            const header = await stream.readLine();
             expect(header).toBe('id,a,b,c');
             stream.close();
-            expect(() => {
-                stream.readLine();
-            }).toThrowError('FileInputStream "./tests/a.csv" is not open');
+            await expect(async () => await stream.readLine()).rejects.toThrowError('FileInputStream "./tests/a.csv" is not open');
         });
     });
     describe('changes', () => {        
-        test('both files are empty', () => {
-            const res = diffStrings({
+        test('both files are empty', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
@@ -237,8 +253,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });        
-        test('old is empty', () => {
-            const res = diffStrings({
+        test('old is empty', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                 ],
@@ -274,8 +290,8 @@ describe('differ', () => {
                 changePercent: 100,
             });
         });    
-        test('new is empty', () => {
-            const res = diffStrings({
+        test('new is empty', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -311,8 +327,8 @@ describe('differ', () => {
                 changePercent: 100,
             });
         });    
-        test('same and do not keep same rows', () => {
-            const res = diffStrings({
+        test('same and do not keep same rows', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -339,8 +355,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });
-        test('same and keep same rows', () => {
-            const res = diffStrings({
+        test('same and keep same rows', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -387,8 +403,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });
-        test('same with reordered columns', () => {
-            const res = diffStrings({
+        test('same with reordered columns', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -415,8 +431,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });        
-        test('same with excluded columns', () => {
-            const res = diffStrings({
+        test('same with excluded columns', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -444,8 +460,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });        
-        test('same with included columns', () => {
-            const res = diffStrings({
+        test('same with included columns', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -473,8 +489,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });    
-        test('1 modified', () => {
-            const res = diffStrings({
+        test('1 modified', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -506,8 +522,8 @@ describe('differ', () => {
                 changePercent: 33.33,
             });
         });    
-        test('all modified', () => {
-            const res = diffStrings({
+        test('all modified', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,30',
@@ -553,8 +569,8 @@ describe('differ', () => {
                 changePercent: 100,
             });
         });    
-        test('1 modified with reordered columns', () => {
-            const res = diffStrings({
+        test('1 modified with reordered columns', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -586,8 +602,8 @@ describe('differ', () => {
                 changePercent: 33.33,
             });
         });    
-        test('1 modified with excluded columns', () => {
-            const res = diffStrings({
+        test('1 modified with excluded columns', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -620,9 +636,9 @@ describe('differ', () => {
                 changePercent: 33.33,
             });
         });    
-        test('1 added with excluded columns', () => {
+        test('1 added with excluded columns', async () => {
             // this test will also help boost code coverage in normalizeOldRow
-            const res = diffStrings({
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -649,9 +665,9 @@ describe('differ', () => {
                 changePercent: 50,
             });
         });    
-        test('1 deleted with excluded columns', () => {
+        test('1 deleted with excluded columns', async () => {
             // this test will also help boost code coverage in normalizeNewRow
-            const res = diffStrings({
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -678,8 +694,8 @@ describe('differ', () => {
                 changePercent: 50,
             });
         });    
-        test('1 modified with included columns', () => {
-            const res = diffStrings({
+        test('1 modified with included columns', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -712,8 +728,8 @@ describe('differ', () => {
                 changePercent: 33.33,
             });
         });    
-        test('No modification but adding a new column should force the rows to be modified', () => {
-            const res = diffStrings({
+        test('No modification but adding a new column should force the rows to be modified', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -759,8 +775,8 @@ describe('differ', () => {
                 changePercent: 100,
             });
         });            
-        test('No modification but removing an old column should be transparent', () => {
-            const res = diffStrings({
+        test('No modification but removing an old column should be transparent', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE,REMOVED_COL',
                     '1,john,33,rem1',
@@ -787,8 +803,8 @@ describe('differ', () => {
                 changePercent: 0,
             });
         });    
-        test('1 deleted', () => {
-            const res = diffStrings({
+        test('1 deleted', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -819,8 +835,8 @@ describe('differ', () => {
                 changePercent: 33.33,
             });
         });    
-        test('1 added', () => {
-            const res = diffStrings({
+        test('1 added', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -851,8 +867,8 @@ describe('differ', () => {
                 changePercent: 33.33,
             });
         });            
-        test('only new rows and previous rows have been deleted', () => {
-            const res = diffStrings({
+        test('only new rows and previous rows have been deleted', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -909,8 +925,8 @@ describe('differ', () => {
                 changePercent: 100,
             });
         });            
-        test('same, modified, added and deleted', () => {
-            const res = diffStrings({
+        test('same, modified, added and deleted', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -963,8 +979,8 @@ describe('differ', () => {
                 changePercent: 75,
             });
         });            
-        test('same, modified, added and deleted, in descending order', () => {
-            const res = diffStrings({
+        test('same, modified, added and deleted, in descending order', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '3,dave,44',
@@ -1020,8 +1036,8 @@ describe('differ', () => {
                 changePercent: 75,
             });
         });
-        test('same, modified, added and deleted, with a number primary key', () => {
-            const res = diffStrings({
+        test('same, modified, added and deleted, with a number primary key', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,11',
@@ -1109,8 +1125,8 @@ describe('differ', () => {
                 changePercent: 40,
             });
         });
-        test('same, modified, added and deleted, with a number primary key, in descending order', () => {
-            const res = diffStrings({
+        test('same, modified, added and deleted, with a number primary key, in descending order', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '23,dave,233',
@@ -1199,8 +1215,8 @@ describe('differ', () => {
                 changePercent: 40,
             });
         });
-        test('same, modified, added and deleted, with a complex primary key', () => {
-            const res = diffStrings({
+        test('same, modified, added and deleted, with a complex primary key', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'CODE,VERSION,NAME,PRICE',
                     'apple,1,Apple,0.5',
@@ -1279,8 +1295,8 @@ describe('differ', () => {
                 changePercent: 57.14,
             });
         });        
-        test('same, modified, added and deleted, with a complex primary key, in descending order for 2nd pk field', () => {
-            const res = diffStrings({
+        test('same, modified, added and deleted, with a complex primary key, in descending order for 2nd pk field', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'CODE,VERSION,NAME,PRICE',
                     'apple,2,Apple,0.6',
@@ -1356,8 +1372,8 @@ describe('differ', () => {
                 changePercent: 57.14,
             });
         });        
-        test('keep first 2 changes', () => {
-            const res = diffStrings({
+        test('keep first 2 changes', async () => {
+            const res = await diffStrings({
                 oldLines: [
                     'ID,NAME,AGE',
                     '1,john,33',
@@ -1405,14 +1421,14 @@ describe('differ', () => {
                 changePercent: 66.67,
             });
         });
-        test('should work with real source files (CSV)', () => {
+        test('should work with real source files (CSV)', async () => {
             const output = new FakeFormatWriter();
             const differ = diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             });
-            differ.to({
+            await differ.to({
                 format: (_options) => output,
             });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
@@ -1439,7 +1455,7 @@ describe('differ', () => {
                 same: 5        
             });
         });
-        test('should work with real source files (TSV)', () => {
+        test('should work with real source files (TSV)', async () => {
             const output = new FakeFormatWriter();
             const differ = new Differ({
                 oldSource: {
@@ -1452,7 +1468,7 @@ describe('differ', () => {
                 },
                 keys: ['id'],
             });
-            differ.to({
+            await differ.to({
                 format: (_options) => output,
             });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
@@ -1479,8 +1495,8 @@ describe('differ', () => {
                 same: 5        
             });
         });
-        test('should produce a csv file', () => {
-            const stats = diff({
+        test('should produce a csv file', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1504,8 +1520,8 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });
-        test('should read/write CSV files with an explicit reader/writer', () => {
-            const stats = diff({
+        test('should read/write CSV files with an explicit reader/writer', async () => {
+            const stats = await diff({
                 oldSource: {
                     stream: './tests/a.csv',
                     format: 'csv',
@@ -1538,8 +1554,8 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });
-        test('should produce a csv file with old and new values', () => {
-            const stats = diff({
+        test('should produce a csv file with old and new values', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1566,8 +1582,8 @@ added,10,a10,b10,c10,,,,
 added,11,a11,b11,c11,,,,
 `);
         });
-        test('should produce a tsv file', () => {
-            const stats = diff({
+        test('should produce a tsv file', async () => {
+            const stats = await diff({
                 oldSource: {
                     stream: './tests/a.tsv',
                     delimiter: '\t',
@@ -1600,8 +1616,8 @@ added	10	a10	b10	c10
 added	11	a11	b11	c11
 `);
         });
-        test('should produce a tsv file from a csv and a tsv', () => {
-            const stats = diff({
+        test('should produce a tsv file from a csv and a tsv', async () => {
+            const stats = await diff({
                 oldSource: {
                     stream: './tests/a.csv',
                 },
@@ -1633,8 +1649,8 @@ added	10	a10	b10	c10
 added	11	a11	b11	c11
 `);
         });
-        test('should produce a json file', () => {
-            const stats = diff({
+        test('should produce a json file', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1662,8 +1678,8 @@ added	11	a11	b11	c11
 ], "footer": {"stats":{"totalComparisons":11,"totalChanges":6,"changePercent":54.55,"added":2,"deleted":3,"modified":1,"same":5}}}
 `);
         });    
-        test('should produce a json file with old and new values', () => {
-            const stats = diff({
+        test('should produce a json file with old and new values', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1692,8 +1708,8 @@ added	11	a11	b11	c11
 ], "footer": {"stats":{"totalComparisons":11,"totalChanges":6,"changePercent":54.55,"added":2,"deleted":3,"modified":1,"same":5}}}
 `);
         });    
-        test('should produce a json file with labels in the header', () => {
-            const stats = diff({
+        test('should produce a json file with labels in the header', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1725,8 +1741,8 @@ added	11	a11	b11	c11
 ], "footer": {"stats":{"totalComparisons":11,"totalChanges":6,"changePercent":54.55,"added":2,"deleted":3,"modified":1,"same":5}}}
 `);
         });    
-        test('should read a JSON input file', () => {
-            const stats = diff({
+        test('should read a JSON input file', async () => {
+            const stats = await diff({
                 oldSource: {
                     stream: './tests/a.json',
                     format: 'json',
@@ -1756,8 +1772,8 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });        
-        test('should read a JSON and a CSV input file', () => {
-            const stats = diff({
+        test('should read a JSON and a CSV input file', async () => {
+            const stats = await diff({
                 oldSource: {
                     stream: './tests/a.csv',
                     format: 'csv',
@@ -1787,8 +1803,8 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });        
-        test('should display output on the console', () => {
-            const stats = diff({
+        test('should display output on the console', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1803,8 +1819,8 @@ added,11,a11,b11,c11
                 same: 5        
             });
         });        
-        test('should not produce anything but stats', () => {
-            const stats = diff({
+        test('should not produce anything but stats', async () => {
+            const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1819,8 +1835,8 @@ added,11,a11,b11,c11
                 same: 5        
             });
         });
-        test('should be able to iterate over the diffs', () => {
-            const ctx = diff({
+        test('should be able to iterate over the diffs', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1837,7 +1853,7 @@ added,11,a11,b11,c11
                 same: 0
             });
             const diffs: RowDiff[] = [];
-            for (const rowDiff of ctx.diffs()) {
+            for await (const rowDiff of ctx.diffs()) {
                 diffs.push(rowDiff);
             }
             expect(ctx.isOpen).toBeFalsy();
@@ -1895,8 +1911,8 @@ added,11,a11,b11,c11
                 same: 5        
             });
         });    
-        test('should be able to get the column names before invoking the "to" method', () => {
-            const ctx = diff({
+        test('should be able to get the column names before invoking the "to" method', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1912,7 +1928,7 @@ added,11,a11,b11,c11
                 modified: 0,
                 same: 0
             });
-            const stats = ctx.to('./output/files/output.csv');
+            const stats = await ctx.to('./output/files/output.csv');
             const output = readAllText('./output/files/output.csv');
             expect(ctx.isOpen).toBeFalsy();
             expect(ctx.columns).toEqual(['id', 'a', 'b', 'c']);
@@ -1935,8 +1951,8 @@ added,11,a11,b11,c11
             });
             expect(ctx.stats).toEqual(stats);
         });
-        test('should be able to filter the output', () => {
-            const ctx = diff({
+        test('should be able to filter the output', async () => {
+            const ctx = await diff({
                 oldSource: './tests/c.csv',
                 newSource: './tests/d.csv',
                 keys: [
@@ -1959,7 +1975,7 @@ added,11,a11,b11,c11
                 same: 0
             });
             const catIdx = ctx.columns.indexOf('CATEGORY');
-            const stats = ctx.to({
+            const stats = await ctx.to({
                 stream: './output/files/output.csv',
                 filter: (rowDiff) => (rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]) !== 'Vegetable',
                 keepOldValues: true,
@@ -1986,8 +2002,8 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 same: 6    
             });
         });            
-        test('should be able to get the columns and close the files', () => {
-            const ctx = diff({
+        test('should be able to get the columns and close the files', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -1997,8 +2013,8 @@ added,pear,3,Pear,Fruit,0.35,,,,,
             ctx.close();
             expect(ctx.isOpen).toBeFalsy();
         });
-        test('should work with NullOutputStream', () => {
-            const ctx = diff({
+        test('should work with NullOutputStream', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -2006,8 +2022,8 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 stream: new NullOutputStream(),
             });
         });
-        test('should work with explicit null output stream', () => {
-            const ctx = diff({
+        test('should work with explicit null output stream', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
@@ -2015,8 +2031,8 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 stream: 'null',
             });
         });
-        test('should work with explicit null console stream', () => {
-            const ctx = diff({
+        test('should work with explicit null console stream', async () => {
+            const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],

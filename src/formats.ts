@@ -42,10 +42,10 @@ export interface FormatHeader {
 }
 
 export interface FormatReader {
-    open(): void;
-    readHeader(): FormatHeader;
-    readRow(): Row | undefined;
-    close(): void;
+    open(): Promise<void>;
+    readHeader(): Promise<FormatHeader>;
+    readRow(): Promise<Row | undefined>;
+    close(): Promise<void>;
 }
 
 export type FormatReaderFactory = (options: FormatReaderOptions) => FormatReader;
@@ -89,11 +89,11 @@ export interface FormatFooter {
 }
 
 export interface FormatWriter {
-    open(): void;
-    writeHeader(header: FormatHeader): void;
-    writeDiff(rowDiff: RowDiff): void;
-    writeFooter(footer: FormatFooter): void;
-    close(): void;
+    open(): Promise<void>;
+    writeHeader(header: FormatHeader): Promise<void>;
+    writeDiff(rowDiff: RowDiff): Promise<void>;
+    writeFooter(footer: FormatFooter): Promise<void>;
+    close(): Promise<void>;
 }
 
 export type FormatWriterFactory = (options: FormatWriterOptions) => FormatWriter;
@@ -109,22 +109,22 @@ export class CsvFormatReader implements FormatReader {
         this.delimiter = options.delimiter ?? ',';
     }
 
-    open(): void {
-        this.stream.open();
+    open(): Promise<void> {
+        return this.stream.open();
     }
 
-    readHeader(): FormatHeader {
+    async readHeader(): Promise<FormatHeader> {
         return {
-            columns: parseCsvLine(this.delimiter, this.stream.readLine()) ?? [],
+            columns: parseCsvLine(this.delimiter, await this.stream.readLine()) ?? [],
         };
     }
 
-    readRow(): Row | undefined {
-        return parseCsvLine(this.delimiter, this.stream.readLine());
+    async readRow(): Promise<Row | undefined> {
+        return parseCsvLine(this.delimiter, await this.stream.readLine());
     }
 
-    close(): void {
-        this.stream.close();        
+    close(): Promise<void> {
+        return this.stream.close();        
     }
 }
 
@@ -172,19 +172,19 @@ export class JsonFormatReader implements FormatReader {
         this.stream = options.stream;
     }
 
-    open(): void {
-        this.stream.open();
+    open(): Promise<void> {
         this.headerObj = null;
         this.columns = [];
+        return this.stream.open();
     }
 
-    readHeader(): FormatHeader {
-        let line = this.stream.readLine();
+    async readHeader(): Promise<FormatHeader> {
+        let line = await this.stream.readLine();
         this.headerObj = parseJsonObj(line);
         if (!this.headerObj) {
             // if the obj is undefined, it might mean that we just started an array with a single line containing '['
             // so, process the next line
-            line = this.stream.readLine();
+            line = await this.stream.readLine();
             this.headerObj = parseJsonObj(line);
         }
         if (!this.headerObj) {
@@ -196,21 +196,21 @@ export class JsonFormatReader implements FormatReader {
         };
     }
 
-    readRow(): Row | undefined {
+    async readRow(): Promise<Row | undefined> {
         if (this.headerObj) {
             const row = convertJsonObjToRow(this.headerObj, this.columns);
             this.headerObj = null;
             return row;
         }
-        const line = this.stream.readLine();
+        const line = await this.stream.readLine();
         const obj = parseJsonObj(line);
         const row = convertJsonObjToRow(obj, this.columns);
 
         return row;
     }
 
-    close(): void {
-        this.stream.close();        
+    close(): Promise<void> {
+        return this.stream.close();        
     }
 }
 
@@ -227,31 +227,31 @@ export class CsvFormatWriter implements FormatWriter{
         this.keepOldValues = options.keepOldValues ?? false;
     }
 
-    open(): void {
-        this.stream.open();        
+    open(): Promise<void> {
+        return this.stream.open();        
     }
 
-    writeHeader(header: FormatHeader): void {
+    writeHeader(header: FormatHeader): Promise<void> {
         const columns = [defaultStatusColumnName, ...header.columns];
         if (this.keepOldValues) {
             columns.push(...header.columns.map(col => 'OLD_' + col));
         }
-        this.stream.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
+        return this.stream.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
     }
 
-    writeDiff(rowDiff: RowDiff): void {
+    async writeDiff(rowDiff: RowDiff): Promise<void> {
         if (rowDiff.oldRow && rowDiff.newRow) {
             const row = [rowDiff.status, ...rowDiff.newRow];
             if (this.keepOldValues) {
                 row.push(...rowDiff.oldRow);
             }
-            this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
+            await this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
         } else if (rowDiff.oldRow) {
             if (this.keepOldValues) {
                 const emptyRow = rowDiff.oldRow.map(_ => '');
-                this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...emptyRow, ...rowDiff.oldRow], this.delimiter));
+                await this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...emptyRow, ...rowDiff.oldRow], this.delimiter));
             } else {
-                this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...rowDiff.oldRow], this.delimiter));
+                await this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...rowDiff.oldRow], this.delimiter));
 
             }
         } else if (rowDiff.newRow) {
@@ -260,15 +260,16 @@ export class CsvFormatWriter implements FormatWriter{
                 const emptyRow = rowDiff.newRow.map(_ => '');
                 row.push(...emptyRow);
             }
-            this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
+            await this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
         }
     }
 
-    writeFooter(footer: FormatFooter): void {
+    writeFooter(footer: FormatFooter): Promise<void> {
+        return Promise.resolve();
     }
 
-    close(): void {
-        this.stream.close();
+    close(): Promise<void> {
+        return this.stream.close();
     }
 }
 
@@ -282,17 +283,17 @@ export class JsonFormatWriter implements FormatWriter{
         this.keepOldValues = options.keepOldValues ?? false;
     }
 
-    open(): void {
-        this.stream.open();    
+    open(): Promise<void> {
+        return this.stream.open();    
     }
 
-    writeHeader(header: FormatHeader): void {
+    writeHeader(header: FormatHeader): Promise<void> {
         this.rowCount = 0;
         const h = JSON.stringify(header);
-        this.stream.writeLine(`{ "header": ${h}, "items": [`);
+        return this.stream.writeLine(`{ "header": ${h}, "items": [`);
     }
 
-    writeDiff(rowDiff: RowDiff): void {
+    writeDiff(rowDiff: RowDiff): Promise<void> {
         const record: any = {
             status: rowDiff.status,
         };
@@ -308,34 +309,37 @@ export class JsonFormatWriter implements FormatWriter{
         }
         const separator = this.rowCount === 0 ? '' : ',';
         this.rowCount++;
-        this.stream.writeLine(separator + JSON.stringify(record));
+        return this.stream.writeLine(separator + JSON.stringify(record));
     }
 
-    writeFooter(footer: FormatFooter): void {
-        this.stream.writeLine(`], "footer": ${JSON.stringify(footer)}}`);
+    writeFooter(footer: FormatFooter): Promise<void> {
+        return this.stream.writeLine(`], "footer": ${JSON.stringify(footer)}}`);
     }
 
-    close(): void {
-        this.stream.close();   
+    close(): Promise<void> {
+        return this.stream.close();   
     }
 }
 
 export class NullFormatWriter implements FormatWriter {
-    open(): void {
-        
+    open(): Promise<void> {
+        return Promise.resolve();
     }
 
-    writeHeader(header: FormatHeader): void {
+    writeHeader(header: FormatHeader): Promise<void> {
+        return Promise.resolve();
     }
 
-    writeDiff(rowDiff: RowDiff): void {
+    writeDiff(rowDiff: RowDiff): Promise<void> {
+        return Promise.resolve();
     }
 
-    writeFooter(footer: FormatFooter): void {
+    writeFooter(footer: FormatFooter): Promise<void> {
+        return Promise.resolve();
     }
 
-    close(): void {
-        
+    close(): Promise<void> {
+        return Promise.resolve();
     }
 }
 

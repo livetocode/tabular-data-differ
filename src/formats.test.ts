@@ -38,57 +38,57 @@ describe('formats', () => {
          });    
     });
     describe('JSON reader', () => {
-        test('single compact row', () => {
+        test('single compact row', async () => {
             const stream = new ArrayInputStream([
                 '[{"id": "1","a":"a1","b":"b1","c":"c1"}]',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
-        test('single indented row', () => {
+        test('single indented row', async () => {
             const stream = new ArrayInputStream([
                 '[',
                 '  {"id": "1","a":"a1","b":"b1","c":"c1"}',
                 ']'
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
-        test('inlined brackets, with trailing comma', () => {
+        test('inlined brackets, with trailing comma', async () => {
             const stream = new ArrayInputStream([
                 '[{"id": "1","a":"a1","b":"b1","c":"c1"},',
                 '{"id": "2","a":"a2","b":"b2","c":"c2"},',
                 '{"id": "3","a":"a3","b":"b3","c":"c3"}]',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            const row2 = reader.readRow();
+            const row2 = await reader.readRow();
             expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
-            const row3 = reader.readRow();
+            const row3 = await reader.readRow();
             expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
-        test('outlined brackets, with trailing comma', () => {
+        test('outlined brackets, with trailing comma', async () => {
             const stream = new ArrayInputStream([
                 '[',
                 '  {"id": "1","a":"a1","b":"b1","c":"c1"},',
@@ -97,40 +97,40 @@ describe('formats', () => {
                 ']',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            const row2 = reader.readRow();
+            const row2 = await reader.readRow();
             expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
-            const row3 = reader.readRow();
+            const row3 = await reader.readRow();
             expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
-        test('inlined brackets, with preceding comma', () => {
+        test('inlined brackets, with preceding comma', async () => {
             const stream = new ArrayInputStream([
                 '[{"id": "1","a":"a1","b":"b1","c":"c1"}',
                 ',{"id": "2","a":"a2","b":"b2","c":"c2"}',
                 ',{"id": "3","a":"a3","b":"b3","c":"c3"}]',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            const row2 = reader.readRow();
+            const row2 = await reader.readRow();
             expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
-            const row3 = reader.readRow();
+            const row3 = await reader.readRow();
             expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
-        test('outlined brackets, with preceding comma', () => {
+        test('outlined brackets, with preceding comma', async () => {
             const stream = new ArrayInputStream([
                 '[',
                 '  {"id": "1","a":"a1","b":"b1","c":"c1"}',
@@ -139,48 +139,48 @@ describe('formats', () => {
                 ']',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            const row2 = reader.readRow();
+            const row2 = await reader.readRow();
             expect(row2).toEqual(['2', 'a2', 'b2', 'c2']);
-            const row3 = reader.readRow();
+            const row3 = await reader.readRow();
             expect(row3).toEqual(['3', 'a3', 'b3', 'c3']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
-        test('empty string should fail', () => {
+        test('empty string should fail', async () => {
             const stream = new ArrayInputStream([
                 '',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            expect(() => {
-                reader.readHeader();
-            }).toThrowError('Expected to find at least one object');
+            await reader.open();
+            await expect(async () => {
+                await reader.readHeader();
+            }).rejects.toThrowError('Expected to find at least one object');
         });        
-        test('empty stream should fail', () => {
+        test('empty stream should fail', async () => {
             const stream = new ArrayInputStream([]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            expect(() => {
-                reader.readHeader();
-            }).toThrowError('Expected to find at least one object');
+            await reader.open();
+            await expect(async () => {
+                await reader.readHeader();
+            }).rejects.toThrowError('Expected to find at least one object');
         });        
-        test('row should contain an object or fail, while reading the header', () => {
+        test('row should contain an object or fail, while reading the header', async () => {
             const stream = new ArrayInputStream([
                 '123',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            expect(() => {
-                reader.readHeader();
-            }).toThrowError('Expected to find a JSON object');
+            await reader.open();
+            await expect(async () => {
+                await reader.readHeader();
+            }).rejects.toThrowError('Expected to find a JSON object');
         });        
-        test('row should contain an object or fail, while reading the header', () => {
+        test('row should contain an object or fail, while reading the header', async () => {
             const stream = new ArrayInputStream([
                 '[',
                 '  {"id": "1","a":"a1","b":"b1","c":"c1"},',
@@ -189,27 +189,27 @@ describe('formats', () => {
                 ']',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            reader.readHeader();
-            const row1 = reader.readRow();
+            await reader.open();
+            await reader.readHeader();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
-            expect(() => {
-                reader.readRow();
-            }).toThrowError('Expected to find a JSON object');
+            await expect(async () => {
+                await reader.readRow();
+            }).rejects.toThrowError('Expected to find a JSON object');
         });
-        test('should convert object values to string', () => {
+        test('should convert object values to string', async () => {
             const stream = new ArrayInputStream([
                 '[{"id": 1,"a":"a1","b":true,"c":3.14}]',
             ]);
             const reader = new JsonFormatReader({ stream });
-            reader.open();
-            const header = reader.readHeader();
+            await reader.open();
+            const header = await reader.readHeader();
             expect(header.columns).toEqual(['id','a','b','c']);
-            const row1 = reader.readRow();
+            const row1 = await reader.readRow();
             expect(row1).toEqual(['1', 'a1', 'true', '3.14']);
-            const done = reader.readRow();
+            const done = await reader.readRow();
             expect(done).toBeUndefined();
-            reader.close();
+            await reader.close();
         });
 
     });
