@@ -22,6 +22,7 @@ A very efficient library for diffing two **sorted** streams of tabular data, suc
 - [**Usage**](#usage)
 - [**Documentation**](#documentation)
 - [**Development**](#development)
+- [**Roadmap**](#roadmap)
 
 # Why another lib?
 
@@ -145,6 +146,20 @@ const stats = await diff({
 console.log(stats);
 ```
 
+### Diff 2 CSV files and produce a CSV file using HTTP transport
+
+```Typescript
+import { diff } from 'tabular-data-differ';
+const stats = await diff({
+    oldSource: new URL('https://some.server.org/tests/a.csv'),
+    newSource: new URL('https://some.server.org/tests/b.csv'),
+    keys: ['id'],
+}).to(new URL('https://some.server.org/temp/delta.csv'));
+console.log(stats);
+```
+
+Note that you provide username/password in the URL object if you need basic authentication.
+
 ### Diff 2 CSV files and produce a JSON file
 
 ```Typescript
@@ -208,15 +223,26 @@ const ctx = await diff({
     newSource: {
         stream: new ArrayInputStream([
             'id,name',
-            '1,john',
+            '1,johnny',
             '3,sarah',
         ]),
     },
     keys: ['id'],
 }).start();
 console.log('columns:', ctx.columns);
+const idIdx = ctx.columns.indexOf('id);
+assert(idIdx >= 0, 'could not find id column');
+const nameIdx = ctx.columns.indexOf('name);
+assert(nameIdx >= 0, 'could not find name column');
 for await (const rowDiff of ctx.diffs()) {
-    console.log(rowDiff);
+    if (rowDiff.status === 'modified') {
+        const id = rowDiff.newRow[idIdx];
+        const oldName = rowDiff.oldRow[nameIdx];
+        const newName = rowDiff.newRow[nameIdx];
+        if (oldName !== newName) {
+            console.log('In record ', id, ', name changed from', oldName, 'to', newName);
+        }
+    }
 }
 console.log('stats:', ctx.stats);
 ```
@@ -337,7 +363,7 @@ try {
 
 Name     |Required|Default value|Description
 ---------|--------|-------------|-----------
-stream   | yes    |             |either a string filename or an instance of an InputStream (like FileInputStream).
+stream   | yes    |             |either a string filename, a URL or an instance of an InputStream (like FileInputStream).
 format   | no     | csv         | either an existing format (csv or json) or a factory function to create your own format.
 delimiter| no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
 filter   | no     |             | a filter to allow or reject the input rows.
@@ -346,7 +372,7 @@ filter   | no     |             | a filter to allow or reject the input rows.
 
 Name         |Required|Default value|Description
 -------------|--------|-------------|-----------
-stream       | no     | console     | either a standard output (console, null), a string filename or an instance of an InputStream (like FileInputStream). 
+stream       | no     | console     | either a standard output (console, null), a string filename, a URL or an instance of an InputStream (like FileInputStream). 
 format       | no     | csv         | either an existing format (csv or json) or a factory function to create your own format.
 delimiter    | no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
 filter       | no     |             | a filter to select which changes should be sent to the output stream.
@@ -367,8 +393,8 @@ order    | no     | ASC         | specifies if the column is in ascending (ASC) 
 
 Name            |Required|Default value|Description
 ----------------|--------|-------------|-----------
-oldSource       | yes    |             | either a string filename or a SourceOptions
-newSource       | yes    |             | either a string filename or a SourceOptions
+oldSource       | yes    |             | either a string filename, a URL or a SourceOptions
+newSource       | yes    |             | either a string filename, a URL or a SourceOptions
 keys            | yes    |             | the list of columns that form the primary key. This is required for comparing the rows. A key can be a string name or a {ColumnDefinition}
 includedColumns | no     |             | the list of columns to keep from the input sources. If not specified, all columns are selected.
 excludedColumns | no     |             | the list of columns to exclude from the input sources.
@@ -392,7 +418,7 @@ Initiates the comparison between the old and new sources and sends the diffs to 
 
 This returns the change stats once completed.
 
-The options parameter can be either a standard output (console, null), a string filename or an OutputOptions.
+The options parameter can be either a standard output (console, null), a string filename, a URL or an OutputOptions.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
 
@@ -418,7 +444,7 @@ Initiates the comparison between the old and new sources and sends the diffs to 
 
 This returns the change stats once completed.
 
-The options parameter can be either a standard output (console, null), a string filename or an OutputOptions.
+The options parameter can be either a standard output (console, null), a string filename, a URL or an OutputOptions.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered.
 
@@ -584,3 +610,14 @@ Tests are implemented with Jest and can be run with:
 
 You can also look at the coverage with:
 `npm run show-coverage`
+
+# Roadmap
+
+If you manifest some interest in this project, we could add new streams:
+- S3, allowing you to use an external storage capacity such as AWS S3
+- HTTP, allowing you to provide custom headers for authentication
+- SQL, allowing you to diff two database tables between two separate databases
+
+And we could add more formats:
+- XML
+- protobuff

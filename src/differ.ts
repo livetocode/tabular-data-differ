@@ -44,7 +44,7 @@ export interface RowPair {
 export type RowPairProvider = () => Promise<RowPair>;
 
 /** 
- * A string containing a filename 
+ * Either a string containing a filename or a URL
  */
 export type Filename = string | URL;
 
@@ -54,7 +54,7 @@ export type Filename = string | URL;
  */
 export interface SourceOptions {
     /**
-     * Specifies the input stream, either providing a string filename or a custom instance of an InputStream
+     * Specifies the input stream, either providing a string filename, a URL or a custom instance of an InputStream
      */
     stream: Filename | InputStream;
     /**
@@ -79,7 +79,7 @@ export interface SourceOptions {
  */
 export interface OutputOptions {
     /**
-     * Specifies a standard output (console, null), a string filename or an instance of an InputStream (like FileInputStream). 
+     * Specifies a standard output (console, null), a string filename, a URL or an instance of an InputStream (like FileInputStream). 
      * Defaults to 'console'.
      */
     stream?:  'console' | 'null' | Filename | OutputStream;
@@ -295,7 +295,7 @@ export class Differ {
 
     /**
      * Iterates over the changes and sends them to the submitted output.
-     * @param options a standard ouput such as console or null, a string filename or a custom OutputOptions.
+     * @param options a standard ouput such as console or null, a string filename, a URL or a custom OutputOptions.
      * @returns the change stats once all the changes have been processed. 
      * Note that the stats might be different from getStats() when there is a filter in the output options, 
      * as the differ stats are updated by the iterator which doesn't have any filter.
@@ -389,7 +389,7 @@ export class DifferContext {
     
     /**
      * Iterates over the changes and sends them to the submitted output.
-     * @param options a standard ouput such as console or null, a string filename or a custom OutputOptions.
+     * @param options a standard ouput such as console or null, a string filename, A URL or a custom OutputOptions.
      * @returns the change stats once all the changes have been processed. 
      * Note that the stats might be different from "DiffContext.stats" when there is a filter in the output options, 
      * as the context stats are updated by the iterator which doesn't have any filter.
