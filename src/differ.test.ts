@@ -1455,6 +1455,32 @@ describe('differ', () => {
                 same: 5        
             });
         });
+        test('should work with http streams (CSV)', async () => {
+            const currentDir = process.cwd().replaceAll('\\', '/');
+            const stats = await diff({
+                oldSource: new URL(`file://localhost/${currentDir}/tests/a.csv`),
+                newSource: new URL(`file://localhost/${currentDir}/tests/b.csv`),
+                keys: ['id'],
+            }).to(new URL(`file://localhost/${currentDir}/output/files/output.csv`));
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
+        });
         test('should work with real source files (TSV)', async () => {
             const output = new FakeFormatWriter();
             const differ = new Differ({
@@ -2040,6 +2066,29 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 stream: 'console',
             });
         });
+        test('comparing the same file should not produce any change', async () => {
+            const output = new FakeFormatWriter();
+            const differ = diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/a.csv',
+                keys: ['id'],
+            });
+            await differ.to({
+                format: (_options) => output,
+            });
+            expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
+            expect(output.diffs).toEqual([     
+            ]);
+            expect(output.footer?.stats).toEqual({
+                totalComparisons: 9,
+                totalChanges: 0,
+                changePercent: 0,
+                added: 0,
+                deleted: 0,
+                modified: 0,
+                same: 9    
+            });
+        });        
     });
 });
 
