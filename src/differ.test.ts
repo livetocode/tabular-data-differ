@@ -223,10 +223,10 @@ describe('differ', () => {
         });
         test('should not be able to read input streams after a close', async () => {
             const stream = new FileInputStream('./tests/a.csv');
-            stream.open();
+            await stream.open();
             const header = await stream.readLine();
             expect(header).toBe('id,a,b,c');
-            stream.close();
+            await stream.close();
             await expect(async () => await stream.readLine()).rejects.toThrowError('FileInputStream "./tests/a.csv" is not open');
         });
     });

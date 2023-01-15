@@ -18,6 +18,17 @@ describe('streams', () => {
             await f2.close();
         }
     });
+    test('should open input file only once', async () => {
+        const f = new FileInputStream('./tests/a.csv');
+        await f.open();
+        try {
+            await expect(async () => {
+                await f.open();
+            }).rejects.toThrowError('file "./tests/a.csv" is already open');
+        } finally {
+            f.close();
+        }        
+    });
     test('should open output file only once', async () => {
         const f = new FileOutputStream('./output/files/test.txt');
         await f.open();
@@ -27,8 +38,7 @@ describe('streams', () => {
             }).rejects.toThrowError('file "./output/files/test.txt" is already open');
         } finally {
             f.close();
-        }
-        
+        }        
     });
     test('closing output file twice should work', async () => {
         const f = new FileOutputStream('./output/files/test.txt');

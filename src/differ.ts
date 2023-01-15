@@ -46,7 +46,7 @@ export type RowPairProvider = () => Promise<RowPair>;
 /** 
  * A string containing a filename 
  */
-export type Filename = string;
+export type Filename = string | URL;
 
 /**
  * Options for configuring an input stream that will be compared to another similar stream
@@ -180,7 +180,7 @@ export function diff(options: DifferOptions): Differ {
 }
 
 function createInputStream(options: SourceOptions): InputStream {
-    if (typeof options.stream === 'string') {
+    if (typeof options.stream === 'string' || options.stream instanceof URL) {
         return new FileInputStream(options.stream);
     }
     return options.stream;
@@ -209,7 +209,7 @@ interface Source {
 }
 
 function createSource(value: Filename | SourceOptions): Source {
-    if (typeof value === 'string') {
+    if (typeof value === 'string' || value instanceof URL) {
         return { 
             format: new CsvFormatReader({ stream: new FileInputStream(value) }) 
         };
@@ -248,7 +248,7 @@ function createOutputStream(options: OutputOptions): OutputStream {
     if (options.stream === 'null') {
         return new NullOutputStream();
     }
-    if (typeof options.stream === 'string') {
+    if (typeof options.stream === 'string' || options.stream instanceof URL) {
         return new FileOutputStream(options.stream);
     }
     if (options.stream) {
@@ -270,7 +270,7 @@ function createOutput(value: 'console' | 'null' | Filename | OutputOptions): {
     if (value === 'null') {
         return { format: new NullFormatWriter() };
     }
-    if (typeof value === 'string') {
+    if (typeof value === 'string' || value instanceof URL) {
         return { format: new CsvFormatWriter({ stream: new FileOutputStream(value) }) };
     }
     return { 

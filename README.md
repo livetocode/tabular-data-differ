@@ -54,7 +54,7 @@ Or two 250 MB files containing 4 millions of rows and 7 columns in 12 seconds.
 
 - single pass algorithm offering O(n) performance
 - 100% code coverage
-- one single dependency on n-readlines
+- no external dependency
 - small composable objects
 - async streams
 - async iterator for enumerating the changes

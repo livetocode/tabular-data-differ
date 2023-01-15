@@ -1,5 +1,5 @@
+import { PathLike } from 'fs';
 import fs from 'fs/promises';
-import lineByLine from 'n-readlines';
 
 export interface InputStream {
     open(): Promise<void>;
@@ -14,41 +14,47 @@ export interface OutputStream {
 }
 
 export class FileInputStream implements InputStream {
-    private liner?: lineByLine;
+    private file?: fs.FileHandle;
+    private iterator?: AsyncIterableIterator<string>;
 
-    constructor(private readonly filename: string) {
+    constructor(private readonly path: PathLike) {
     }
 
-    open(): Promise<void> {
-        this.liner = new lineByLine(this.filename);
-        return Promise.resolve();
+    async open(): Promise<void> {
+        if (this.file !== undefined) {
+            throw new Error(`file "${this.path}" is already open`);
+        }
+        this.file = await fs.open(this.path, 'r');
+        this.iterator = this.file.readLines()[Symbol.asyncIterator]();
     }
 
     async readLine(): Promise<string | undefined> {
-        if (!this.liner) {
-            throw new Error(`FileInputStream "${this.filename}" is not open`);
+        if (!this.iterator) {
+            throw new Error(`FileInputStream "${this.path}" is not open`);
         }
         while(true) {
-            const result = this.liner.next();
-            if(result === false) {
-                return Promise.resolve(undefined);
+            const result = await this.iterator.next();
+            if(result.done) {
+                this.iterator = undefined;
+                return undefined;
             }
-            const line = result.toString().trim();
+            const line = result.value.trim();
             // ignore empty lines
             if (line.length > 0) {
-                return Promise.resolve(line);
+                return line;
             }
         }
     }
 
-    close(): Promise<void> {
-        if (this.liner) {
-            if ((this.liner as any)['fd'] !== null) {
-                this.liner.close();
-            }
-            this.liner = undefined;
+    async close(): Promise<void> {
+        if (this.iterator && this.iterator.return) {
+            await this.iterator.return();
+            this.iterator = undefined;
         }
-        return Promise.resolve();
+        if (this.file !== undefined) {            
+            await this.file.close();
+            this.file = undefined;
+        }
     }
 }
 
@@ -105,29 +111,29 @@ export class ConsoleOutputStream implements OutputStream {
 }
 
 export class FileOutputStream implements OutputStream {
-    private fd?: fs.FileHandle;
+    private file?: fs.FileHandle;
 
-    constructor(public readonly path: string) {
+    constructor(public readonly path: PathLike) {
     }
     
     async open(): Promise<void> {
-        if (this.fd !== undefined) {
+        if (this.file !== undefined) {
             throw new Error(`file "${this.path}" is already open`);
         }
-        this.fd = await fs.open(this.path, 'w');
+        this.file = await fs.open(this.path, 'w');
     }
 
     async writeLine(line: string): Promise<void> {
-        if (this.fd === undefined) {
+        if (this.file === undefined) {
             throw new Error(`file "${this.path}" is not open!`);
         }
-        await this.fd.write(Buffer.from(line + '\n'));
+        await this.file.write(Buffer.from(line + '\n'));
     }
 
     async close(): Promise<void> {
-        if (this.fd !== undefined) {
-            await this.fd.close();
-            this.fd = undefined;
+        if (this.file !== undefined) {
+            await this.file.close();
+            this.file = undefined;
         }
     }
 }
