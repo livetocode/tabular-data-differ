@@ -36,6 +36,9 @@ import {
 export class UnorderedStreamsError extends Error {
 }
 
+export class UniqueKeyViolationError extends Error {
+}
+
 export interface RowPair {
     oldRow?: Row;
     newRow?: Row;
@@ -394,6 +397,7 @@ export class DifferContext {
      * Note that the stats might be different from "DiffContext.stats" when there is a filter in the output options, 
      * as the context stats are updated by the iterator which doesn't have any filter.
      * @throws {UnorderedStreamsError}
+     * @throws {UniqueKeyViolationError}
      * @example
      * import { diff } from 'tabular-data-differ';
      * const stats = diff({
@@ -436,6 +440,7 @@ export class DifferContext {
      * Enumerates the differences between two input streams (old and new).
      * @yields {RowDiff}
      * @throws {UnorderedStreamsError}
+     * @throws {UniqueKeyViolationError}
      * @example
      * import { diff, ArrayInputStream } from 'tabular-data-differ';
      * const ctx = diff({
@@ -585,8 +590,12 @@ export class DifferContext {
     }
 
     private ensureRowsAreInAscendingOrder(source: string, previous?: Row, current?: Row) {
-        if (previous && current) {
+        if (previous && current && previous !== current) {
             const oldDelta = this.comparer(this.keys, previous, current);
+            if (oldDelta === 0) {
+                const cols = this.keys.map(key => key.name);
+                throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
+            }
             if (oldDelta > 0) {
                 const colOrder = this.keys.map(key => `${key.name} ${key.order ?? 'ASC'}`);
                 throw new UnorderedStreamsError(`Expected rows to be ordered by "${colOrder}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);

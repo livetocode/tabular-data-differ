@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { describe, expect, test } from '@jest/globals';
-import { DifferOptions, diff, UnorderedStreamsError, Differ } from './differ';
-import { FormatWriter, FormatHeader, RowDiff, FormatFooter, parseCsvLine, JsonFormatReader, serializeRowAsCsvLine, defaultRowComparer, Column, CsvFormatReader } from './formats';
+import { DifferOptions, diff, UnorderedStreamsError, Differ, UniqueKeyViolationError } from './differ';
+import { FormatWriter, FormatHeader, RowDiff, FormatFooter, CsvFormatReader } from './formats';
 import { ArrayInputStream, FileOutputStream, FileInputStream, NullOutputStream } from './streams';
 
 class FakeFormatWriter implements FormatWriter{
@@ -108,6 +108,48 @@ describe('differ', () => {
             })).rejects.toThrowError(new UnorderedStreamsError(`Expected rows to be ordered by "ID DESC" in new source but received:
   previous=1,john,33
   current=2,rachel,22`));
+        });        
+        test('should detect primary key violation in old source', async () => {
+            await expect(() => diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                    '3,dave bis,444',
+                    '4,noemie,11',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                ],
+                keys: ['ID'],
+            })).rejects.toThrowError(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in old source but received:
+  previous=3,dave,44
+  current=3,dave bis,444`));
+        });        
+        test('should detect primary key violation in new source', async () => {
+            await expect(() => diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                    '3,dave bis,444',
+                    '4,noemie,11',
+                ],
+                keys: ['ID'],
+            })).rejects.toThrowError(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in new source but received:
+  previous=3,dave,44
+  current=3,dave bis,444`));
         });        
         test('should be able to execute twice', async () => {
             const differ = diff({
