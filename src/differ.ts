@@ -114,7 +114,7 @@ export interface OutputOptions {
      */
      filter?: RowDiffFilter;
      /**
-      * Specifies a dictionary of key/value that allows to add custom metadata to the generated file.
+      * Specifies a dictionary of key/value pairs that can provide custom metadata to the generated file.
       */
     labels?: Record<string, string>;
     /**

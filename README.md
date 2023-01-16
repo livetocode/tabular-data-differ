@@ -386,7 +386,7 @@ filter          | no     |             | a filter to select which changes should
 keepOldValues   | no     | false       | specifies if the output should contain both the old and new values for each row.
 keepSameRows    | no     | false       | specifies if the output should also contain the rows that haven't changed.
 changeLimit     | no     |             | specifies a maximum number of differences that should be outputted.
-labels          | no     |             | a dictionary of key/value that allows to add custom metadata to the generated file.
+labels          | no     |             | a dictionary of key/value pairs that can provide custom metadata to the generated file.
 statusColumnName| no     | DIFF_STATUS | specifies the name of the column containing the diff status when the output format is CSV.
 
 ### Key options (ColumnDefinition)
