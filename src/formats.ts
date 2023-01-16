@@ -82,6 +82,7 @@ export interface FormatWriterOptions {
     stream: OutputStream;
     delimiter?: string;
     keepOldValues?: boolean;
+    statusColumnName?: string;
 }
 
 export interface FormatFooter {
@@ -220,11 +221,13 @@ export class CsvFormatWriter implements FormatWriter{
     private readonly stream: OutputStream;
     private readonly delimiter: string;
     private readonly keepOldValues: boolean;
+    private readonly statusColumnName: string;
 
     constructor(options: FormatWriterOptions) {
         this.stream = options.stream;
         this.delimiter = options.delimiter ?? ',';
         this.keepOldValues = options.keepOldValues ?? false;
+        this.statusColumnName = options.statusColumnName ?? defaultStatusColumnName;
     }
 
     open(): Promise<void> {
@@ -232,7 +235,7 @@ export class CsvFormatWriter implements FormatWriter{
     }
 
     writeHeader(header: FormatHeader): Promise<void> {
-        const columns = [defaultStatusColumnName, ...header.columns];
+        const columns = [this.statusColumnName, ...header.columns];
         if (this.keepOldValues) {
             columns.push(...header.columns.map(col => 'OLD_' + col));
         }

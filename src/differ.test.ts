@@ -1588,6 +1588,34 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });
+        test('should produce a csv file with a custom status column name', async () => {
+            const stats = await diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                stream: './output/files/output.csv',
+                statusColumnName: 'diff',
+            });
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`diff,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
+        });
         test('should read/write CSV files with an explicit reader/writer', async () => {
             const stats = await diff({
                 oldSource: {

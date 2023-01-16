@@ -117,6 +117,11 @@ export interface OutputOptions {
       * Specifies a dictionary of key/value that allows to add custom metadata to the generated file.
       */
     labels?: Record<string, string>;
+    /**
+     * Specifies the name of the column containing the diff status when the output format is CSV.
+     * By default, it is named "DIFF_STATUS".
+     */
+    statusColumnName?: string;
 }
 
 export interface ColumnDefinition {
@@ -228,6 +233,7 @@ function createFormatWriter(options: OutputOptions): FormatWriter {
         stream, 
         delimiter: options.delimiter,
         keepOldValues: options.keepOldValues,
+        statusColumnName: options.statusColumnName,
     };
     if (options.format === 'csv') {
         return new CsvFormatWriter(writerOptions);
