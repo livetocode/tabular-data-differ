@@ -202,7 +202,7 @@ const stats = await diff({
     },
     keys: ['id'],
 }).to({
-    stream: './temp/delta.tsv',
+    stream: './temp/delta.json',
     format: 'json',
 });
 console.log(stats);
@@ -277,6 +277,7 @@ const ctx = await diff({
     ],
 }).start();
 const catIdx = ctx.columns.indexOf('CATEGORY');
+assert(catIdx >= 0, 'could not find CATEGORY column');
 const stats = await ctx.to({
     stream: 'console',
     filter: (rowDiff) => ['Fruit', 'Meat'].includes(rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]),
@@ -285,6 +286,8 @@ console.log(stats);
 ```
 
 ### Order 2 CSV files and diff them on the console
+
+Don't forget to install first my other lib: `npm i huge-csv-sorter`.
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
@@ -311,6 +314,8 @@ console.log(stats);
 ```
 
 ### Auto-correct unordered CSV files and retry diff
+
+Don't forget to install first my other lib: `npm i huge-csv-sorter`.
 
 ```Typescript
 import { diff } from 'tabular-data-differ';
@@ -349,6 +354,8 @@ try {
     } else {
         throw err;
     }
+} finally {
+    // delete sorted files...
 }
 ```
 
