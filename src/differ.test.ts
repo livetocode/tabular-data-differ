@@ -1745,6 +1745,43 @@ added	10	a10	b10	c10
 added	11	a11	b11	c11
 `);
         });
+        test('should read a json containing null values and convert them to empty strings in a CSV', async () => {
+            const stats = await diff({
+                oldSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": null}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                newSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
+                        '{"id":2, "name":"mary", "active": true, "cash": null}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                keys: ['id'],
+            }).to('./output/files/output.csv');
+            expect(stats).toEqual({
+                totalComparisons: 2,
+                totalChanges: 2,
+                changePercent: 100,
+                added: 0,
+                deleted: 0,
+                modified: 2,
+                same: 0
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,name,active,cash
+modified,1,john,true,1234.99
+modified,2,mary,true,
+`);
+        });        
         test('should produce a json file', async () => {
             const stats = await diff({
                 oldSource: './tests/a.csv',
@@ -1772,6 +1809,50 @@ added	11	a11	b11	c11
 ,{"status":"added","data":["10","a10","b10","c10"]}
 ,{"status":"added","data":["11","a11","b11","c11"]}
 ], "footer": {"stats":{"totalComparisons":11,"totalChanges":6,"changePercent":54.55,"added":2,"deleted":3,"modified":1,"same":5}}}
+`);
+        });    
+        test('should produce a json file containing numbers and booleans', async () => {
+            const stats = await diff({
+                oldSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": 1234.56}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":12, "name":"sarah", "active": true, "cash": 500}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                newSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
+                        '{"id":2, "name":"mary", "active": true, "cash": 3210.22}',
+                        '{"id":12, "name":"sarah", "active": true, "cash": 600}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                keys: ['id'],
+            }).to({
+                stream: './output/files/output.json',
+                format: 'json',
+            });
+            expect(stats).toEqual({
+                totalComparisons: 3,
+                totalChanges: 3,
+                changePercent: 100,
+                added: 0,
+                deleted: 0,
+                modified: 3,
+                same: 0    
+            });
+            const output = readAllText('./output/files/output.json');
+            expect(output).toBe(`{ "header": {"columns":["id","name","active","cash"]}, "items": [
+{"status":"modified","data":[1,"john",true,1234.99]}
+,{"status":"modified","data":[2,"mary",true,3210.22]}
+,{"status":"modified","data":[12,"sarah",true,600]}
+], "footer": {"stats":{"totalComparisons":3,"totalChanges":3,"changePercent":100,"added":0,"deleted":0,"modified":3,"same":0}}}
 `);
         });    
         test('should produce a json file with old and new values', async () => {
@@ -2158,7 +2239,118 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 modified: 0,
                 same: 9    
             });
-        });        
+        });
+        test('should ignore duplicate rows, with single key', async () => {
+            const stats = await diff({
+                oldSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": null}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":3, "name":"sarah", "active": true, "cash": 500}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                newSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":3, "name":"sarah", "active": true, "cash": 600}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                keys: ['id'],
+            }).to('./output/files/output.csv');
+            expect(stats).toEqual({
+                totalComparisons: 3,
+                totalChanges: 2,
+                changePercent: 66.67,
+                added: 0,
+                deleted: 0,
+                modified: 2,
+                same: 1
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,name,active,cash
+modified,1,john,true,1234.99
+modified,3,sarah,true,600
+`);
+        });                     
+        test('should ignore duplicate rows, with multiple keys', async () => {
+            const stats = await diff({
+                oldSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                newSource: {
+                    stream: new ArrayInputStream([
+                        '[',
+                        '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":3, "name":"sarah", "active": true, "cash": 600}',
+                        ']'
+                    ]),
+                    format: 'json',
+                },
+                keys: ['id', 'name', 'active', 'cash'],
+            }).to('./output/files/output.csv');
+            expect(stats).toEqual({
+                totalComparisons: 3,
+                totalChanges: 1,
+                changePercent: 33.33,
+                added: 1,
+                deleted: 0,
+                modified: 0,
+                same: 2
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,name,active,cash
+added,3,sarah,true,600
+`);
+        });               
+        test('should not consider a row to be a duplicate if the non key columns are different', async () => {
+            await expect(async () => {
+                await diff({
+                    oldSource: {
+                        stream: new ArrayInputStream([
+                            '[',
+                            '{"id":1, "name":"john", "active": true, "cash": null}',
+                            '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                            '{"id":2, "name":"mary", "active": false, "cash": 100}',
+                            '{"id":3, "name":"sarah", "active": true, "cash": 500}',
+                            ']'
+                        ]),
+                        format: 'json',
+                    },
+                    newSource: {
+                        stream: new ArrayInputStream([
+                            '[',
+                            '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
+                            '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                            '{"id":2, "name":"mary", "active": false, "cash": 100}',
+                            '{"id":3, "name":"sarah", "active": true, "cash": 600}',
+                            ']'
+                        ]),
+                        format: 'json',
+                    },
+                    keys: ['id'],
+                }).to('./output/files/output.csv');
+            }).rejects.toThrowError(`Expected rows to be unique by "id" in old source but received:
+  previous=2,mary,false,3210.22
+  current=2,mary,false,100`);
+        });
     });
 });
 

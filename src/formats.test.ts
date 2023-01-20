@@ -1,4 +1,4 @@
-import { Column, defaultRowComparer, JsonFormatReader, parseCsvLine, serializeRowAsCsvLine } from "./formats";
+import { Column, defaultRowComparer, JsonFormatReader, numberComparer, parseCsvLine, serializeRowAsCsvLine } from "./formats";
 import { ArrayInputStream } from "./streams";
 
 describe('formats', () => {
@@ -197,22 +197,23 @@ describe('formats', () => {
                 await reader.readRow();
             }).rejects.toThrowError('Expected to find a JSON object');
         });
-        test('should convert object values to string', async () => {
+        test('should not convert object values to string', async () => {
             const stream = new ArrayInputStream([
-                '[{"id": 1,"a":"a1","b":true,"c":3.14}]',
+                '[{"id": 1,"a":"a1","b":true,"c":3.14,"d":null}]',
             ]);
             const reader = new JsonFormatReader({ stream });
             await reader.open();
             const header = await reader.readHeader();
-            expect(header.columns).toEqual(['id','a','b','c']);
+            expect(header.columns).toEqual(['id','a','b','c', 'd']);
             const row1 = await reader.readRow();
-            expect(row1).toEqual(['1', 'a1', 'true', '3.14']);
+            expect(row1).toEqual([1, 'a1', true, 3.14, null]);
             const done = await reader.readRow();
             expect(done).toBeUndefined();
             await reader.close();
         });
 
     });
+    // TODO: write test for JsonFormatWriter and test row with non string values being properly serialized as json record
     describe('formatting', () => {
         test('a,b,c', () => {
             const txt = serializeRowAsCsvLine(['a', 'b', 'c']);
@@ -323,6 +324,43 @@ describe('formats', () => {
                 const res = defaultRowComparer(keys, a, b);
                 expect(res).toBe(1);
             });    
+        });
+        test('number comparison', () => {
+            expect(numberComparer(null, null)).toBe(0);
+            expect(numberComparer(1, null)).toBe(1);
+            expect(numberComparer(null, 1)).toBe(-1);
+            expect(numberComparer(1, '')).toBe(1);
+            expect(numberComparer('', 1)).toBe(-1);
+            expect(numberComparer(0, 0)).toBe(0);
+            expect(numberComparer('0', 0)).toBe(0);
+            expect(numberComparer(0, '0')).toBe(0);
+            expect(numberComparer(1.1, 1.1)).toBe(0);
+            expect(numberComparer(1.1, 1.2)).toBe(-1);
+            expect(numberComparer(1.2, 1.1)).toBe(1);
+            expect(numberComparer(-10, 0)).toBe(-1);
+            expect(numberComparer(0, -10)).toBe(1);
+            expect(numberComparer(0, 10)).toBe(-1);
+            expect(numberComparer(10, 0)).toBe(1);
+            expect(numberComparer(null, '')).toBe(-1);
+            expect(numberComparer('', null)).toBe(1);
+            expect(numberComparer(null, true)).toBe(-1);
+            expect(numberComparer(true, null)).toBe(1);
+            expect(numberComparer(true, true)).toBe(0);
+            expect(numberComparer(true, false)).toBe(1);
+            expect(numberComparer(false, true)).toBe(-1);
+            expect(numberComparer(null, 'abc')).toBe(-1);
+            expect(numberComparer('abc', null)).toBe(1);
+            expect(numberComparer('1', '1')).toBe(0);
+            expect(numberComparer('1', '2')).toBe(-1);
+            expect(numberComparer('2', '1')).toBe(1);
+            expect(numberComparer('2', '11')).toBe(-1);
+            expect(numberComparer('11', '2')).toBe(1);
+            expect(numberComparer('1.1', '1.1')).toBe(0);
+            expect(numberComparer('1.1', '1.2')).toBe(-1);
+            expect(numberComparer('1.2', '1.1')).toBe(1);
+            expect(numberComparer('x1.1', 'x1.1')).toBe(0);
+            expect(numberComparer('x1.1', '1.1')).toBe(-1);
+            expect(numberComparer('1.1', 'x1.1')).toBe(1);
         });
     });
 

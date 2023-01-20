@@ -481,12 +481,15 @@ export class DifferContext {
                 if (pair.oldRow === undefined && pair.newRow === undefined) {
                     break;
                 }
-                this.ensurePairsAreInAscendingOrder(previousPair, pair);
-                previousPair = pair;
 
                 const rowDiff = this.evalPair(pair);
-                this.stats.add(rowDiff);
-                yield rowDiff;    
+
+                const isDuplicate = this.ensurePairsAreInAscendingOrder(rowDiff, previousPair, pair);
+                previousPair = pair;
+                if (!isDuplicate) {
+                    this.stats.add(rowDiff);
+                    yield rowDiff;        
+                }
 
                 if (rowDiff.delta === 0) {
                     pairProvider = () => this.getNextPair();
@@ -522,7 +525,7 @@ export class DifferContext {
         }
     }
 
-    private normalizeColumns(oldColumns: Row, newColumns: Row) {
+    private normalizeColumns(oldColumns: string[], newColumns: string[]) {
         const includedColumns = new Set<string>(this.options.includedColumns);
         const excludedColumns = new Set<string>(this.options.excludedColumns);
         const columns: Column[] = [];
@@ -583,7 +586,8 @@ export class DifferContext {
         const newRow = this.normalizeNewRow(pair.newRow);
         const oldRow = this.normalizeOldRow(pair.oldRow);
         if (delta === 0) {
-            const areSame = this.comparer(this.columnsWithoutKeys, pair.oldRow, pair.newRow) === 0;
+            const areSame =  this.columnsWithoutKeys.length === 0 || 
+                             this.comparer(this.columnsWithoutKeys, pair.oldRow, pair.newRow) === 0;
             return { delta, status: areSame ? 'same' : 'modified', oldRow, newRow };
         } else if (delta < 0) {
             return { delta, status: 'deleted', oldRow };
@@ -591,10 +595,19 @@ export class DifferContext {
         return { delta, status: 'added', newRow };        
     }
 
-    private ensureRowsAreInAscendingOrder(source: string, previous?: Row, current?: Row) {
+    private ensureRowsAreInAscendingOrder(source: string, rowDiff: RowDiff, previous?: Row, current?: Row) {
         if (previous && current && previous !== current) {
             const oldDelta = this.comparer(this.keys, previous, current);
             if (oldDelta === 0) {
+                if (rowDiff.status === 'same') {
+                    const isSame = this.columnsWithoutKeys.length === 0 ?
+                                        true :
+                                        this.comparer(this.columnsWithoutKeys, previous, current) === 0;
+                    if (isSame) {
+                        // ignore duplicate rows
+                        return true;
+                    }    
+                }
                 const cols = this.keys.map(key => key.name);
                 throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
             }
@@ -603,11 +616,13 @@ export class DifferContext {
                 throw new UnorderedStreamsError(`Expected rows to be ordered by "${colOrder}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
             }        
         }
+        return false;
     }
 
-    private ensurePairsAreInAscendingOrder(previous: RowPair, current: RowPair) {
-        this.ensureRowsAreInAscendingOrder('old', previous.oldRow, current.oldRow);
-        this.ensureRowsAreInAscendingOrder('new', previous.newRow, current.newRow);
+    private ensurePairsAreInAscendingOrder(rowDiff: RowDiff, previous: RowPair, current: RowPair) {
+        const isOldDuplicate = this.ensureRowsAreInAscendingOrder('old', rowDiff, previous.oldRow, current.oldRow);
+        const isNewDuplicate = this.ensureRowsAreInAscendingOrder('new', rowDiff, previous.newRow, current.newRow);
+        return isOldDuplicate && isNewDuplicate;
     }
 }
 

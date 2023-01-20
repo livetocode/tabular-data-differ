@@ -1,8 +1,10 @@
 import { InputStream, OutputStream } from "./streams";
 
+export type CellValue = string | number | boolean | null;
+
 export type ColumnOrdering = 'ASC' | 'DESC';
 
-export type ColumnComparer = (a: string, b: string) => number;
+export type ColumnComparer = (a: CellValue, b: CellValue) => number;
 
 export type Column = {
     name: string;
@@ -12,7 +14,7 @@ export type Column = {
     order?: ColumnOrdering;
 }
 
-export type Row = string[];
+export type Row = CellValue[];
 
 export type RowComparer = (keys: Column[], a? : Row, b?: Row) => number;
 
@@ -160,7 +162,13 @@ export function convertJsonObjToRow(obj: any, columns: string[]): Row | undefine
     if (obj === null || obj === undefined) {
         return undefined;
     }
-    const row = columns.map(col => `${obj[col]}`);
+    const row = columns.map(col => {
+        const val = obj[col];
+        if (val === null || typeof val === 'number' || typeof val === 'boolean') {
+            return val;
+        }
+        return `${val}`;
+    });
     return row;
 }
 
@@ -346,9 +354,9 @@ export class NullFormatWriter implements FormatWriter {
     }
 }
 
-export function parseCsvLine(delimiter: string, line?: string): Row | undefined {
+export function parseCsvLine(delimiter: string, line?: string): string[] | undefined {
     if (line) {
-        const row: Row = [];
+        const row: string[] = [];
         let idx = 0;
         let prevIdx = 0;
         let c = '';
@@ -398,40 +406,79 @@ export function parseCsvLine(delimiter: string, line?: string): Row | undefined 
 }
 
 const charsToEncodeRegEx = /,|"/;
-export function serializeCsvField(value : string): string {
-    if (charsToEncodeRegEx.test(value)) {
+export function serializeCsvField(value : CellValue): string {
+    if (value === null) {
+        return '';
+    }
+    if (typeof value === 'string' && charsToEncodeRegEx.test(value)) {
         return `"${value.replaceAll('"', '""')}"`;
     }
-    return value;
+    return value.toString();
 }
 
 export function serializeRowAsCsvLine(row : Row, delimiter?: string) {
     return row.map(serializeCsvField).join(delimiter ?? ',');
 }
 
-export function stringComparer(a: string, b: string): number {
+export function stringComparer(a: CellValue, b: CellValue): number {
     // We can't use localeCompare since the ordered csv file produced by SQLite won't use the same locale
-    // return a.localeCompare(b);
-    if (a === b) {
+    // return a.localeCompare(b)
+    const aa = a === null ? '' : a.toString();
+    const bb = b === null ? '' : b.toString();
+    if (aa === bb) {
         return 0;
-    } else if (a < b) {
+    } else if (aa < bb) {
         return -1;
     } 
     return 1;
 }
 
-export function numberComparer(a: string, b: string): number {
-    // keep numbers as strings when comparing for equality
-    // since it avoids doing the number conversion and will also avoid floating point errors
+export function numberComparer(a: CellValue, b: CellValue): number {
     if (a === b) {
         return 0;
     }
-    const aa = parseFloat(a);
-    const bb = parseFloat(b);
+    if (a === null && b !== null) {
+        return -1;
+    }
+    if (a !== null && b === null) {
+        return 1;
+    }
+    if (typeof a === 'number' && typeof b === 'number') {
+        return a < b ? -1 : 1;
+    }
+    if (typeof a === 'boolean' && typeof b === 'boolean') {
+        return a < b ? -1 : 1;
+    }
+    const strA = a!.toString();
+    const strB = b!.toString();
+    if (strA === strB) {
+        return 0;
+    }
+    if (strA === '' && strB !== '') {
+        return -1;
+    }
+    if (strA !== '' && strB === '') {
+        return 1;
+    }
+    const aa = parseFloat(strA);
+    const bb = parseFloat(strB);
+    if (Number.isNaN(aa) && !Number.isNaN(bb)) {
+        return -1;
+    }
+    if (!Number.isNaN(aa) && Number.isNaN(bb)) {
+        return 1;
+    }
     if (aa < bb) {
         return -1;
     }
     return 1;
+}
+
+export function cellComparer(a: CellValue, b: CellValue): number {
+    if (typeof a === 'number' && typeof b === 'number') {
+        return numberComparer(a, b);
+    }
+    return stringComparer(a, b);
 }
 
 export function defaultRowComparer(columns: Column[], a? : Row, b?: Row): number {
@@ -448,9 +495,9 @@ export function defaultRowComparer(columns: Column[], a? : Row, b?: Row): number
         return -1;
     }
     for (const col of columns) {
-        const aa = a![col.oldIndex] ?? '';
-        const bb = b![col.newIndex] ?? '';
-        const comparer = col.comparer ?? stringComparer;
+        const aa = a![col.oldIndex] ?? null;
+        const bb = b![col.newIndex] ?? null;
+        const comparer = col.comparer ?? cellComparer;
         let delta = comparer(aa, bb);
         if (delta !== 0 && col.order === 'DESC') {
             delta = - delta;
