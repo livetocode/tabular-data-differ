@@ -568,7 +568,7 @@ or
 
 #### Items
 
-A list of DiffRow objects, which can have two distinct layouts based on the "OutputOptions.keepOldValues" property.
+A list of RowDiff objects, which can have two distinct layouts based on the "OutputOptions.keepOldValues" property.
 
 ##### keepOldValues is false or undefined
 ```json

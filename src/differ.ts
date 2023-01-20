@@ -71,10 +71,6 @@ export interface SourceOptions {
      * Used only by the CSV format.
      */
     delimiter?: string;
-    /**
-     * Specifies a filter to allow or reject the input rows
-     */
-    filter?: RowFilter;
 }
 
 /**
@@ -112,7 +108,7 @@ export interface OutputOptions {
     /**
      * Specifies a filter to select which changes should be sent to the output stream.
      */
-     filter?: RowDiffFilter;
+    filter?: RowDiffFilter;
      /**
       * Specifies a dictionary of key/value pairs that can provide custom metadata to the generated file.
       */
