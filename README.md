@@ -59,6 +59,7 @@ Or two 250 MB files containing 4 millions of rows and 7 columns in 12 seconds.
 - small composable objects
 - async streams
 - async iterator for enumerating the changes
+- generic input format using an async generator function
 
 # Algorithm complexity
 
@@ -128,7 +129,6 @@ import { diff } from 'tabular-data-differ';
 const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: './tests/b.csv',
-    output: 'null',
     keys: ['id'],
 }).to('null');
 console.log(stats);
@@ -158,7 +158,7 @@ const stats = await diff({
 console.log(stats);
 ```
 
-Note that you provide username/password in the URL object if you need basic authentication.
+Note that you can provide the username/password in the URL object if you need basic authentication.
 
 ### Diff 2 CSV files and produce a JSON file
 
@@ -169,8 +169,10 @@ const stats = await diff({
     newSource: './tests/b.csv',
     keys: ['id'],
 }).to({
-    stream: './temp/delta.json',
-    format: 'json',
+    destination: {
+        format: 'json',
+        stream: './temp/delta.json',
+    },
 });
 console.log(stats);
 ```
@@ -184,8 +186,10 @@ const stats = await diff({
     newSource: './tests/b.csv',
     keys: ['id'],
 }).to({
-    stream: './temp/delta.tsv',
-    delimiter: '\t',
+    destination: {
+        format: 'tsv',
+        stream: './temp/delta.tsv',
+    }
 });
 console.log(stats);
 ```
@@ -197,13 +201,15 @@ import { diff } from 'tabular-data-differ';
 const stats = await diff({
     oldSource: './tests/a.csv',
     newSource: {
+        format: 'tsv',
         stream: './tests/b.tsv',
-        delimiter: '\t',
     },
     keys: ['id'],
 }).to({
-    stream: './temp/delta.json',
-    format: 'json',
+    destination: {
+        format: 'json',
+        stream: './temp/delta.json',
+    },
 });
 console.log(stats);
 ```
@@ -214,6 +220,7 @@ console.log(stats);
 import { diff, ArrayInputStream } from 'tabular-data-differ';
 const ctx = await diff({
     oldSource: {
+        format: 'csv',
         stream: new ArrayInputStream([
             'id,name',
             '1,john',
@@ -221,6 +228,7 @@ const ctx = await diff({
         ]),
     },
     newSource: {
+        format: 'csv',
         stream: new ArrayInputStream([
             'id,name',
             '1,johnny',
@@ -256,6 +264,7 @@ const stats = await diff({
     newSource: './tests/b.csv',
     keys: ['id'],
 }).to({
+    destination: 'console',
     filter: (rowDiff) => rowDiff.status !== 'deleted',
 });
 console.log(stats);
@@ -279,8 +288,8 @@ const ctx = await diff({
 const catIdx = ctx.columns.indexOf('CATEGORY');
 assert(catIdx >= 0, 'could not find CATEGORY column');
 const stats = await ctx.to({
-    stream: 'console',
-    filter: (rowDiff) => ['Fruit', 'Meat'].includes(rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]),
+    destination: 'console',
+    filter: (rowDiff) => ['Fruit', 'Meat'].includes(rowDiff.newRow?.[catIdx]?.toString() ?? rowDiff.oldRow?.[catIdx]?.toString() ?? ''),
 });
 console.log(stats);
 ```
@@ -359,6 +368,59 @@ try {
 }
 ```
 
+### async iterable source
+
+You can easily plug any kind of data source by leveraging nodejs async generator functions, 
+which would allow you to fetch the data from a database or from a REST API endpoint!
+
+Here's a simplistic example:
+
+```typescript
+import { diff } from 'tabular-data-differ';
+
+const stats = await diff({
+    oldSource: {
+        format: 'iterable',
+        provider: someAsyncSource,
+    },
+    newSource: {
+        format: 'iterable',
+        provider: () => someAsyncSource(2),
+    },
+    keys: ['id'],
+}).to('./output/files/output.csv');
+console.log(stats);
+
+
+async function *someAsyncSource(limit?: number) {
+    let items = [
+        {
+            id: 1,
+            name: 'John',
+            age: 33,
+        },
+        {
+            id: 2,
+            name: 'Mary',
+            age: 22,
+        },
+        {
+            id: 3,
+            name: 'Cindy',
+            age: 44,
+        },
+    ];  
+    if (limit !== undefined){
+        items = items.slice(0, limit);
+    }
+    for (const item of items) {
+        yield item;
+    }
+}
+
+```
+
+
 # Documentation
 
 - [**API**](#api)
@@ -368,26 +430,89 @@ try {
 
 ### Source options
 
+#### CSV
+
 Name     |Required|Default value|Description
 ---------|--------|-------------|-----------
-stream   | yes    |             |either a string filename, a URL or an instance of an InputStream (like FileInputStream).
-format   | no     | csv         | either an existing format (csv or json) or a factory function to create your own format.
-delimiter| no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
-filter   | no     |             | a filter to allow or reject the input rows.
+format   | yes    |             | You must specify 'csv' to select the CSV format
+stream   | yes    |             | either a string filename, a URL or an instance of an InputStream (like FileInputStream).
+delimiter| no     | ,           | the char used to delimit fields within a row.
+
+#### TSV
+
+Name     |Required|Default value|Description
+---------|--------|-------------|-----------
+format   | yes    |             | You must specify 'tsv' to select the TSV format
+stream   | yes    |             | either a string filename, a URL or an instance of an InputStream (like FileInputStream).
+delimiter| no     | \t          | the char used to delimit fields within a row.
+
+#### JSON
+
+Name     |Required|Default value|Description
+---------|--------|-------------|-----------
+format   | yes    |             | You must specify 'json' to select the JSON format
+stream   | yes    |             | either a string filename, a URL or an instance of an InputStream (like FileInputStream).
+
+#### Iterable
+
+Name     |Required|Default value|Description
+---------|--------|-------------|-----------
+format   | yes    |             | You must specify 'iterable' to select the Iterable format
+provider | yes    |             | a function that must return an instance of an async iterable object (see [Async generator functions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncGenerator))
+
+See [Example](#async-iterable-source)
+
+#### Custom
+
+Name     |Required|Default value|Description
+---------|--------|-------------|-----------
+format   | yes    |             | You must specify 'custom' to select the custom format
+reader   | yes    |             | an instance of a FormatReader
+
+### Destination options
+
+#### CSV
+
+Name         |Required|Default value|Description
+-------------|--------|-------------|-----------
+format       | yes    |             | You must specify 'csv' to select the CSV format
+stream       | yes    |             | either a string filename, a URL or an instance of an OutputStream (like FileOutputStream).
+delimiter    | no     | ,           | the char used to delimit fields within a row.
+keepOldValues| no     | false       | specifies if the destination should contain both the old and new values for each row.
+
+#### TSV
+
+Name         |Required|Default value|Description
+-------------|--------|-------------|-----------
+format       | yes    |             | You must specify 'tsv' to select the TSV format
+stream       | yes    |             | either a string filename, a URL or an instance of an OutputStream (like FileOutputStream).
+delimiter    | no     | \t          | the char used to delimit fields within a row.
+keepOldValues| no     | false       | specifies if the destination should contain both the old and new values for each row.
+
+#### JSON
+
+Name         |Required|Default value|Description
+-------------|--------|-------------|-----------
+format       | yes    |             | You must specify 'json' to select the JSON format
+stream       | yes    |             | either a string filename, a URL or an instance of an OutputStream (like FileOutputStream).
+keepOldValues| no     | false       | specifies if the destination should contain both the old and new values for each row.
+
+#### Custom
+
+Name     |Required|Default value|Description
+---------|--------|-------------|-----------
+format   | yes    |             | You must specify 'custom' to select the custom format
+writer   | yes    |             | an instance of a FormatWriter
 
 ### OutputOptions
 
 Name            |Required|Default value|Description
 ----------------|--------|-------------|-----------
-stream          | no     | console     | either a standard output (console, null), a string filename, a URL or an instance of an InputStream (like FileInputStream). 
-format          | no     | csv         | either an existing format (csv or json) or a factory function to create your own format.
-delimiter       | no     | ,           | the char used to delimit fields within a row. This is only used by the CSV format.
+destination     | yes    |             | either a standard output (console, null), a string filename, a URL or an instance of an InputStream (like FileInputStream). 
 filter          | no     |             | a filter to select which changes should be sent to the output stream.
-keepOldValues   | no     | false       | specifies if the output should contain both the old and new values for each row.
 keepSameRows    | no     | false       | specifies if the output should also contain the rows that haven't changed.
 changeLimit     | no     |             | specifies a maximum number of differences that should be outputted.
 labels          | no     |             | a dictionary of key/value pairs that can provide custom metadata to the generated file.
-statusColumnName| no     | DIFF_STATUS | specifies the name of the column containing the diff status when the output format is CSV.
 
 ### Key options (ColumnDefinition)
 
@@ -627,8 +752,10 @@ You can also look at the coverage with:
 If you manifest some interest in this project, we could add new streams:
 - S3, allowing you to use an external storage capacity such as AWS S3
 - HTTP, allowing you to provide custom headers for authentication
-- SQL, allowing you to diff two database tables between two separate databases
 
 And we could add more formats:
 - XML
 - protobuff
+- SQL, allowing you to diff two database tables between two separate databases
+
+But with the [async iterable sources](#iterable) feature, you should be able to easily plug any kind of data source you need!

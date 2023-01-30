@@ -2,7 +2,7 @@ import fs from 'fs';
 import { describe, expect, test } from '@jest/globals';
 import { DifferOptions, diff, UnorderedStreamsError, Differ, UniqueKeyViolationError } from './differ';
 import { FormatWriter, FormatHeader, RowDiff, FormatFooter, CsvFormatReader } from './formats';
-import { ArrayInputStream, FileOutputStream, FileInputStream, NullOutputStream } from './streams';
+import { ArrayInputStream, FileOutputStream, NullOutputStream } from './streams';
 
 class FakeFormatWriter implements FormatWriter{
     public header?: FormatHeader;
@@ -41,13 +41,18 @@ async function diffStrings(options: DiffOptions): Promise<FakeFormatWriter> {
     await diff({
         ...options,
         oldSource: { 
+            format: 'csv',
             stream: new ArrayInputStream(options.oldLines) 
         },
         newSource: {
+            format: 'csv',
             stream: new ArrayInputStream(options.newLines),
         },
     }).to({
-        format: (_options) => writer,
+        destination: {
+            format: 'custom',
+            writer,
+        },
         keepSameRows: options.keepSameRows,
         changeLimit: options.changeLimit,
     });
@@ -68,6 +73,41 @@ describe('differ', () => {
         }
     });
     describe('validation errors', () => {
+        test('should reject unknown source format', async () => {
+            await expect(async () => {
+                await diff({ 
+                    oldSource: {
+                        format: <any>'foobar',
+                        stream: './tests/a.csv',
+                    },
+                    newSource: {
+                        format: 'csv',
+                        stream: './tests/b.csv',
+                    },
+                    keys: ['id'],
+                }).to('null');
+            }).rejects.toThrowError(`Unknown source format 'foobar'`);
+        });
+        test('should reject unknown destination format', async () => {
+            await expect(async () => {
+                await diff({ 
+                    oldSource: {
+                        format: 'csv',
+                        stream: './tests/a.csv',
+                    },
+                    newSource: {
+                        format: 'csv',
+                        stream: './tests/b.csv',
+                    },
+                    keys: ['id'],
+                }).to({
+                    destination: {
+                        format: <any>'foo',
+                        stream: 'console',    
+                    },
+                });
+            }).rejects.toThrowError(`Unknown destination format 'foo'`);
+        });        
         test('should detect invalid ordering in ascending mode', async () => {
             await expect(() => diffStrings({
                 oldLines: [
@@ -236,6 +276,20 @@ describe('differ', () => {
                 }
             }).rejects.toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
         });
+        test('should not allow calling to() twice', async () => {
+            const ctx = await diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).start();
+            expect(ctx.isOpen).toBeTruthy();
+            const stats = await ctx.to('null');
+            expect(stats.totalComparisons).toBe(11);
+            expect(ctx.isOpen).toBeFalsy();
+            await expect(async () => {
+                await ctx.to('null');
+            }).rejects.toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
+        });        
         test('should allow calling start() twice', async () => {
             const differ = diff({
                 oldSource: './tests/a.csv',
@@ -262,14 +316,6 @@ describe('differ', () => {
             expect(ctx2.isOpen).toBeFalsy();
             expect(diffs2.length).toBe(11);
             expect(diffs2).toEqual(diffs);
-        });
-        test('should not be able to read input streams after a close', async () => {
-            const stream = new FileInputStream('./tests/a.csv');
-            await stream.open();
-            const header = await stream.readLine();
-            expect(header).toBe('id,a,b,c');
-            await stream.close();
-            await expect(async () => await stream.readLine()).rejects.toThrowError('FileInputStream "./tests/a.csv" is not open');
         });
     });
     describe('changes', () => {        
@@ -1471,7 +1517,10 @@ describe('differ', () => {
                 keys: ['id'],
             });
             await differ.to({
-                format: (_options) => output,
+                destination: {
+                    format: 'custom',
+                    writer: output,
+                }
             });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
             expect(output.diffs).toEqual([
@@ -1527,17 +1576,22 @@ added,11,a11,b11,c11
             const output = new FakeFormatWriter();
             const differ = new Differ({
                 oldSource: {
+                    format: 'csv',
                     stream: './tests/a.tsv',
                     delimiter: '\t',
                 },
                 newSource: {
+                    format: 'csv',
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
                 keys: ['id'],
             });
             await differ.to({
-                format: (_options) => output,
+                destination: {
+                    format: 'custom',
+                    writer: output,
+                }
             });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
             expect(output.diffs).toEqual([
@@ -1563,12 +1617,39 @@ added,11,a11,b11,c11
                 same: 5        
             });
         });
-        test('should produce a csv file', async () => {
+        test('should produce a csv file (to)', async () => {
             const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to('./output/files/output.csv');
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,a,b,c
+deleted,01,a1,b1,c1
+modified,04,aa4,bb4,cc4
+deleted,05,a5,b5,c5
+deleted,06,a6,b6,c6
+added,10,a10,b10,c10
+added,11,a11,b11,c11
+`);
+        });
+        test('should produce a csv file (to.destination)', async () => {
+            const stats = await diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                destination: './output/files/output.csv',
+            });
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -1594,8 +1675,11 @@ added,11,a11,b11,c11
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.csv',
-                statusColumnName: 'diff',
+                destination: {
+                    format: 'csv',
+                    stream: './output/files/output.csv',
+                    statusColumnName: 'diff',
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1623,13 +1707,15 @@ added,11,a11,b11,c11
                     format: 'csv',
                 },
                 newSource: {
-                    stream: './tests/b.csv',
-                    format: (options) => new CsvFormatReader(options),
+                    format: 'custom',
+                    reader: new CsvFormatReader({ stream: './tests/b.csv' }),
                 },
                 keys: ['id'],
             }).to({
-                stream: new FileOutputStream('./output/files/output.csv'),
-                format: 'csv',
+                destination: {
+                    format: 'csv',
+                    stream: new FileOutputStream('./output/files/output.csv'),    
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1656,8 +1742,11 @@ added,11,a11,b11,c11
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({ 
-                stream: './output/files/output.csv',
-                keepOldValues: true,
+                destination: {
+                    format: 'csv',
+                    stream: './output/files/output.csv',
+                    keepOldValues: true,
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1681,17 +1770,19 @@ added,11,a11,b11,c11,,,,
         test('should produce a tsv file', async () => {
             const stats = await diff({
                 oldSource: {
+                    format: 'tsv',
                     stream: './tests/a.tsv',
-                    delimiter: '\t',
                 },
                 newSource: {
+                    format: 'tsv',
                     stream: './tests/b.tsv',
-                    delimiter: '\t',
                 },
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.tsv',
-                delimiter: '\t',
+                destination: {
+                    format: 'tsv',
+                    stream: './output/files/output.tsv',
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1715,16 +1806,21 @@ added	11	a11	b11	c11
         test('should produce a tsv file from a csv and a tsv', async () => {
             const stats = await diff({
                 oldSource: {
+                    format: 'csv',
                     stream: './tests/a.csv',
                 },
                 newSource: {
+                    format: 'csv',
                     stream: './tests/b.tsv',
                     delimiter: '\t',
                 },
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.tsv',
-                delimiter: '\t',
+                destination: {
+                    format: 'csv',
+                    stream: './output/files/output.tsv',
+                    delimiter: '\t',
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1788,8 +1884,10 @@ modified,2,mary,true,
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.json',
-                format: 'json',
+                destination: {
+                    format: 'json',
+                    stream: './output/files/output.json',    
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1835,8 +1933,10 @@ modified,2,mary,true,
                 },
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.json',
-                format: 'json',
+                destination: {
+                    format: 'json',
+                    stream: './output/files/output.json',    
+                },
             });
             expect(stats).toEqual({
                 totalComparisons: 3,
@@ -1861,9 +1961,11 @@ modified,2,mary,true,
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.json',
-                format: 'json',
-                keepOldValues: true,
+                destination: {
+                    format: 'json',
+                    stream: './output/files/output.json',
+                    keepOldValues: true,    
+                }
             });
             expect(stats).toEqual({
                 totalComparisons: 11,
@@ -1891,8 +1993,10 @@ modified,2,mary,true,
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: './output/files/output.json',
-                format: 'json',
+                destination: {
+                    format: 'json',
+                    stream: './output/files/output.json',    
+                },
                 labels: {
                     generatedAt: '2023-01-02T01:21:57Z',
                     source: 'Some source...'
@@ -1980,7 +2084,7 @@ added,10,a10,b10,c10
 added,11,a11,b11,c11
 `);
         });        
-        test('should display output on the console', async () => {
+        test('should display output on the console (to)', async () => {
             const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
@@ -1996,12 +2100,48 @@ added,11,a11,b11,c11
                 same: 5        
             });
         });        
-        test('should not produce anything but stats', async () => {
+        test('should display output on the console (to.destination)', async () => {
+            const stats = await diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                destination: 'console',
+            });
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+        });        
+        test('should not produce anything but stats (to)', async () => {
             const stats = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to('null');
+            expect(stats).toEqual({
+                totalComparisons: 11,
+                totalChanges: 6,
+                changePercent: 54.55,
+                added: 2,
+                deleted: 3,
+                modified: 1,
+                same: 5        
+            });
+        });
+        test('should not produce anything but stats (to.destination', async () => {
+            const stats = await diff({
+                oldSource: './tests/a.csv',
+                newSource: './tests/b.csv',
+                keys: ['id'],
+            }).to({
+                destination: 'null',
+            });
             expect(stats).toEqual({
                 totalComparisons: 11,
                 totalChanges: 6,
@@ -2153,9 +2293,12 @@ added,11,a11,b11,c11
             });
             const catIdx = ctx.columns.indexOf('CATEGORY');
             const stats = await ctx.to({
-                stream: './output/files/output.csv',
-                filter: (rowDiff) => (rowDiff.newRow?.[catIdx] ?? rowDiff.oldRow?.[catIdx]) !== 'Vegetable',
-                keepOldValues: true,
+                destination: {
+                    format: 'csv',
+                    stream: './output/files/output.csv',
+                    keepOldValues: true,
+                },
+                filter: (rowDiff) => ['Fruit', 'Meat'].includes(rowDiff.newRow?.[catIdx]?.toString() ?? rowDiff.oldRow?.[catIdx]?.toString() ?? ''),
             });
             const output = readAllText('./output/files/output.csv');
             expect(ctx.isOpen).toBeFalsy();
@@ -2196,7 +2339,10 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: new NullOutputStream(),
+                destination: {
+                    format: 'csv',
+                    stream: new NullOutputStream(),
+                },
             });
         });
         test('should work with explicit null output stream', async () => {
@@ -2205,16 +2351,22 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: 'null',
+                destination: {
+                    format: 'csv',
+                    stream: 'null',
+                },
             });
         });
-        test('should work with explicit null console stream', async () => {
+        test('should work with explicit console stream', async () => {
             const ctx = await diff({
                 oldSource: './tests/a.csv',
                 newSource: './tests/b.csv',
                 keys: ['id'],
             }).to({
-                stream: 'console',
+                destination: {
+                    format: 'csv',
+                    stream: 'console',
+                },
             });
         });
         test('comparing the same file should not produce any change', async () => {
@@ -2225,7 +2377,10 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                 keys: ['id'],
             });
             await differ.to({
-                format: (_options) => output,
+                destination: {
+                    format: 'custom',
+                    writer: output,
+                }
             });
             expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
             expect(output.diffs).toEqual([     
@@ -2351,7 +2506,61 @@ added,3,sarah,true,600
   previous=2,mary,false,3210.22
   current=2,mary,false,100`);
         });
+        test('should accept an iterable source', async () => {
+            const stats = await diff({
+                oldSource: {
+                    format: 'iterable',
+                    provider: someAsyncSource,
+                },
+                newSource: {
+                    format: 'iterable',
+                    provider: () => someAsyncSource(2),
+                },
+                keys: ['id'],
+            }).to('./output/files/output.csv');
+            const output = readAllText('./output/files/output.csv');
+            expect(output).toBe(`DIFF_STATUS,id,name,age
+deleted,3,Cindy,44
+`);
+            expect(stats).toEqual({
+                totalComparisons: 3,
+                totalChanges: 1,
+                changePercent: 33.33,
+                added: 0,
+                deleted: 1,
+                modified: 0,
+                same: 2
+            });
+        });
     });
 });
+
+async function *someAsyncSource(limit?: number) {
+    let items = [
+        {
+            id: 1,
+            name: 'John',
+            age: 33,
+        },
+        {
+            id: 2,
+            name: 'Mary',
+            age: 22,
+        },
+        {
+            id: 3,
+            name: 'Cindy',
+            age: 44,
+        },
+    ];  
+    if (limit !== undefined){
+        items = items.slice(0, limit);
+    }
+    for (const item of items) {
+        yield item;
+    }
+}
+
+
 
 

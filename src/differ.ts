@@ -1,26 +1,18 @@
 import { 
-    InputStream, 
-    OutputStream, 
-    FileInputStream, 
     ConsoleOutputStream, 
-    NullOutputStream, 
     FileOutputStream,
+    Filename,
 } from "./streams";
 import { 
     Row, 
-    FormatReaderFactory, 
-    RowFilter, 
-    FormatWriterFactory, 
     RowDiffFilter, 
     ColumnComparer, 
     ColumnOrdering, 
     RowComparer, 
     FormatReader, 
-    FormatReaderOptions, 
     CsvFormatReader, 
     JsonFormatReader, 
     FormatWriter, 
-    FormatWriterOptions, 
     CsvFormatWriter, 
     JsonFormatWriter, 
     NullFormatWriter, 
@@ -31,6 +23,12 @@ import {
     RowDiff, 
     stringComparer, 
     numberComparer,
+    CsvFormatReaderOptions,
+    CsvFormatWriterOptions,
+    JsonFormatReaderOptions,
+    JsonFormatWriterOptions,
+    IterableFormatReaderOptions,
+    IterableFormatReader,
 } from "./formats";
 
 export class UnorderedStreamsError extends Error {
@@ -46,57 +44,126 @@ export interface RowPair {
 
 export type RowPairProvider = () => Promise<RowPair>;
 
-/** 
- * Either a string containing a filename or a URL
+/**
+ * Options for configuring a source stream as a CSV stream
  */
-export type Filename = string | URL;
+export type CsvSource = {
+    format: 'csv';
+} & CsvFormatReaderOptions;
+
+/**
+ * Options for configuring a destination stream as a CSV stream
+ */
+export type CsvDestination = {
+    format: 'csv';
+} & CsvFormatWriterOptions;
+
+/**
+ * Options for configuring a source stream as a TSV stream
+ */
+export type TsvSource = {
+    format: 'tsv';
+} & CsvFormatReaderOptions;
+
+/**
+ * Options for configuring a destination stream as a TSV stream
+ */
+export type TsvDestination = {
+    format: 'tsv';
+} & CsvFormatWriterOptions;
+
+/**
+ * Options for configuring a source stream as a JSON stream
+ */
+export type JsonSource = {
+    format: 'json';
+} & JsonFormatReaderOptions;
+
+/**
+ * Options for configuring a destination stream as a JSON stream
+ */
+export type JsonDestination = {
+    format: 'json';
+} & JsonFormatWriterOptions;
+
+/**
+ * Options for configuring a source as an iterable generator
+ */
+export type IterableSource = {
+    format: 'iterable';
+} & IterableFormatReaderOptions;
+
+/**
+ * Options for configuring a source as a custom format
+ */
+export type CustomSource = {
+    format: 'custom';
+    reader: FormatReader;
+}
+
+/**
+ * Options for configuring a destination as a custom format
+ */
+export type CustomDestination = {
+    format: 'custom';
+    writer: FormatWriter;
+}
+
+/**
+ * Options for configuring a source of data
+ */
+export type SourceOptions = 
+    | CsvSource 
+    | TsvSource 
+    | JsonSource 
+    | IterableSource
+    | CustomSource;
+
+/**
+ * Options for configuring a destination of data
+ */
+export type DestinationOptions = 
+    | CsvDestination 
+    | TsvDestination 
+    | JsonDestination 
+    | CustomDestination;
 
 /**
  * Options for configuring an input stream that will be compared to another similar stream
  * in order to obtain the changes between those two sources.
  */
-export interface SourceOptions {
+ export interface DifferOptions {
     /**
-     * Specifies the input stream, either providing a string filename, a URL or a custom instance of an InputStream
+     * Configures the old source
      */
-    stream: Filename | InputStream;
+    oldSource: Filename | SourceOptions; 
     /**
-     * Specifies the format of the input stream, either providing a standard format (csv or json) or your factory function for producing a custom FormatReader instance. 
-     * Defaults to 'csv'.
+     * Configures the new source
      */
-    format?: 'csv' | 'json' | FormatReaderFactory;
+    newSource: Filename | SourceOptions; 
+     /**
+      * Configures the primary keys used to compare the rows between the old and new sources
+      */
+    keys: (string | ColumnDefinition)[];
     /**
-     * Specifies the char delimiting the fields in a row.
-     * Defaults to ','. 
-     * Used only by the CSV format.
+     * the list of columns to keep from the input sources. If not specified, all columns are selected.
      */
-    delimiter?: string;
+    includedColumns?: string[];
+    /**
+     * the list of columns to exclude from the input sources.
+     */
+    excludedColumns?: string[];
+    /**
+     * Specifies a custom row comparer
+     */
+    rowComparer?: RowComparer;
 }
 
 /**
  * Options for configuring the output destination of the changes emitted by the Differ object
  */
-export interface OutputOptions {
-    /**
-     * Specifies a standard output (console, null), a string filename, a URL or an instance of an InputStream (like FileInputStream). 
-     * Defaults to 'console'.
-     */
-    stream?:  'console' | 'null' | Filename | OutputStream;
-    /**
-     * Specifies an existing format (csv or json) or a factory function to create your own format.
-     * Defaults to 'csv'.
-     */
-    format?: 'csv' | 'json' | FormatWriterFactory;
-    /**
-     * Specifies the char delimiting the fields in a row.
-     * Defaults to ','. 
-     * Used only by the CSV format.
-     */
-     delimiter?: string;
-    /**
-     * Specifies if the output should contain both the old and new values for each row.
-     */
-    keepOldValues?: boolean;
+ export interface OutputOptions {
+    destination:  'console' | 'null' | Filename | DestinationOptions;
     /**
      * Specifies if the output should also contain the rows that haven't changed.
      */
@@ -113,11 +180,6 @@ export interface OutputOptions {
       * Specifies a dictionary of key/value pairs that can provide custom metadata to the generated file.
       */
     labels?: Record<string, string>;
-    /**
-     * Specifies the name of the column containing the diff status when the output format is CSV.
-     * By default, it is named "DIFF_STATUS".
-     */
-    statusColumnName?: string;
 }
 
 export interface ColumnDefinition {
@@ -147,7 +209,7 @@ export interface DifferOptions {
     /**
      * Configures the new source
      */
-     newSource: Filename | SourceOptions; 
+    newSource: Filename | SourceOptions; 
      /**
       * Configures the primary keys used to compare the rows between the old and new sources
       */
@@ -183,83 +245,63 @@ export function diff(options: DifferOptions): Differ {
     return new Differ(options);
 }
 
-function createInputStream(options: SourceOptions): InputStream {
-    if (typeof options.stream === 'string' || options.stream instanceof URL) {
-        return new FileInputStream(options.stream);
-    }
-    return options.stream;
-}
-
 function createFormatReader(options: SourceOptions): FormatReader {
-    const stream = createInputStream(options);
-    const readerOptions: FormatReaderOptions = { 
-        stream, 
-        delimiter: options.delimiter,
-    };
+    const unknownFormat: any = options.format;
     if (options.format === 'csv') {
-        return new CsvFormatReader(readerOptions);
+        return new CsvFormatReader(options);
+    } 
+    if (options.format === 'tsv') {
+        return new CsvFormatReader({
+            ...options,
+            delimiter: '\t',
+        });
     } 
     if (options.format === 'json') {
-        return new JsonFormatReader(readerOptions);
+        return new JsonFormatReader(options);
     }
-    if (options.format !== undefined) {
-        return options.format(readerOptions);
+    if (options.format === 'iterable') {
+        return new IterableFormatReader(options);
     }
-    return new CsvFormatReader(readerOptions);    
+    if (options.format === 'custom') {
+        return options.reader;
+    }
+    throw new Error(`Unknown source format '${unknownFormat}'`);
 }
 
-interface Source {
-    format: FormatReader;
-}
-
-function createSource(value: Filename | SourceOptions): Source {
+function createSource(value: Filename | SourceOptions): FormatReader {
     if (typeof value === 'string' || value instanceof URL) {
-        return { 
-            format: new CsvFormatReader({ stream: new FileInputStream(value) }) 
-        };
+        return createFormatReader({ format: 'csv', stream: value });
     }
-    return { 
-        format: createFormatReader(value), 
-    };
+    return createFormatReader(value);
 }
 
-function createFormatWriter(options: OutputOptions): FormatWriter {
-    const stream = createOutputStream(options);
-    const writerOptions: FormatWriterOptions = { 
-        stream, 
-        delimiter: options.delimiter,
-        keepOldValues: options.keepOldValues,
-        statusColumnName: options.statusColumnName,
-    };
-    if (options.format === 'csv') {
-        return new CsvFormatWriter(writerOptions);
+function createFormatWriter(options:  'console' | 'null' | Filename | DestinationOptions): FormatWriter {
+    if (options === 'console') {
+        return new CsvFormatWriter({ stream: 'console' });
     }
-    if (options.format === 'json') {
-        return new JsonFormatWriter(writerOptions);
-    }
-    if (options.format !== undefined) {
-        return options.format(writerOptions);
-    }
-    if (options.stream === 'null') {
+    if (options === 'null') {
         return new NullFormatWriter();
     }
-    return new CsvFormatWriter(writerOptions);
-}
-
-function createOutputStream(options: OutputOptions): OutputStream {
-    if (options.stream === 'console') {
-        return new ConsoleOutputStream();
-    } 
-    if (options.stream === 'null') {
-        return new NullOutputStream();
+    if (typeof options === 'string' || options instanceof URL) {
+        return new CsvFormatWriter({ stream: options });
     }
-    if (typeof options.stream === 'string' || options.stream instanceof URL) {
-        return new FileOutputStream(options.stream);
+    const unknownFormat: any = options.format;
+    if (options.format === 'csv') {
+        return new CsvFormatWriter(options);
     }
-    if (options.stream) {
-        return options.stream;
+    if (options.format === 'tsv') {
+        return new CsvFormatWriter({
+            ...options,
+            delimiter: '\t',
+        });
     }
-    return new ConsoleOutputStream();    
+    if (options.format === 'json') {
+        return new JsonFormatWriter(options);
+    }
+    if (options.format === 'custom') {
+        return options.writer;
+    }
+    throw new Error(`Unknown destination format '${unknownFormat}'`);
 }
 
 function createOutput(value: 'console' | 'null' | Filename | OutputOptions): { 
@@ -279,7 +321,7 @@ function createOutput(value: 'console' | 'null' | Filename | OutputOptions): {
         return { format: new CsvFormatWriter({ stream: new FileOutputStream(value) }) };
     }
     return { 
-        format: createFormatWriter(value), 
+        format: createFormatWriter(value.destination), 
         filter: value.filter, 
         keepSameRows: value.keepSameRows, 
         changeLimit: value.changeLimit,
@@ -327,8 +369,8 @@ export class DifferContext {
     private _columnNames: string[] = [];
     private _isOpen = false;
     private _isClosed = false;
-    private oldSource: Source;
-    private newSource: Source;
+    private oldSource: FormatReader;
+    private newSource: FormatReader;
     private comparer: RowComparer = defaultRowComparer;
     private keys: Column[] = [];
     private _columns: Column[] = [];
@@ -343,14 +385,14 @@ export class DifferContext {
     }
 
     /**
-     * Opens the input streams (old and new) and reads the nam.
+     * Opens the input streams (old and new) and reads the headers.
      * This is an internal method that will be automatically called by "Differ.start" method.
      */
     async [OpenSymbol](): Promise<void> {
         if (!this._isOpen) {
             this._isOpen = true;
-            await this.oldSource.format.open();
-            await this.newSource.format.open();
+            await this.oldSource.open();
+            await this.newSource.open();
             await this.extractHeaders();
         }
     }
@@ -362,8 +404,8 @@ export class DifferContext {
      */
     close(): void {
         if (this._isOpen) {
-            this.newSource.format.close();
-            this.oldSource.format.close();
+            this.newSource.close();
+            this.oldSource.close();
             this._isOpen = false;
         }
         this._isClosed = true;
@@ -505,8 +547,8 @@ export class DifferContext {
     }
 
     private async extractHeaders(): Promise<void> {
-        const oldHeader = await this.oldSource.format.readHeader();
-        const newHeader = await this.newSource.format.readHeader();
+        const oldHeader = await this.oldSource.readHeader();
+        const newHeader = await this.newSource.readHeader();
         if (oldHeader.columns.length === 0) {
             throw new Error('Expected to find columns in old source');
         }
@@ -568,14 +610,15 @@ export class DifferContext {
     }
 
     private getNextOldRow(): Promise<Row | undefined> {
-        return this.oldSource.format.readRow();
+        return this.oldSource.readRow();
     }
 
     private getNextNewRow(): Promise<Row | undefined> {
-        return this.newSource.format.readRow();
+        return this.newSource.readRow();
     }
 
     private async getNextPair():Promise<RowPair> {
+        // TODO: parallelize
         const oldRow = await this.getNextOldRow();
         const newRow = await this.getNextNewRow();
         return { oldRow, newRow };
