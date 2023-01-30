@@ -1,4 +1,4 @@
-import { Column, defaultRowComparer, JsonFormatReader, numberComparer, parseCsvLine, serializeRowAsCsvLine } from "./formats";
+import { Column, defaultRowComparer, IterableFormatReader, JsonFormatReader, JsonFormatWriter, numberComparer, parseCsvLine, serializeRowAsCsvLine } from "./formats";
 import { ArrayInputStream } from "./streams";
 
 describe('formats', () => {
@@ -152,6 +152,21 @@ describe('formats', () => {
             expect(done).toBeUndefined();
             await reader.close();
         });
+        test('reading a closed stream should fail', async () => {
+            const stream = new ArrayInputStream([
+                '',
+            ]);
+            const reader = new JsonFormatReader({ stream });
+            await expect(async () => {
+                await reader.readHeader();
+            }).rejects.toThrowError('Cannot access textReader because stream is not open');
+        });        
+        test('writing to a closed stream should fail', async () => {
+            const writer = new JsonFormatWriter({ stream: './output/files/output.json' });
+            await expect(async () => {
+                await writer.writeHeader({columns: ['id', 'name']});
+            }).rejects.toThrowError('Cannot access textWriter because stream is not open');
+        });        
         test('empty string should fail', async () => {
             const stream = new ArrayInputStream([
                 '',
@@ -363,5 +378,108 @@ describe('formats', () => {
             expect(numberComparer('1.1', 'x1.1')).toBe(1);
         });
     });
-
+    describe('Iterable source', () => {
+        test('should read all objects', async () => {
+            const format = new IterableFormatReader({
+                provider: someAsyncSource,
+            });
+            await format.open();
+            const header = await format.readHeader();
+            expect(header.columns).toEqual(['id', 'name', 'age']);
+            const row1 = await format.readRow();
+            expect(row1).toEqual([1, 'John', 33]);
+            const row2 = await format.readRow();
+            expect(row2).toEqual([2, 'Mary', 22]);
+            const row3 = await format.readRow();
+            expect(row3).toEqual([3, 'Cindy', 44]);
+            const row4 = await format.readRow();
+            expect(row4).toBeUndefined();
+            await format.close();
+        });
+        test('should read first object', async () => {
+            const format = new IterableFormatReader({
+                provider: someAsyncSource,
+            });
+            await format.open();
+            const header = await format.readHeader();
+            expect(header.columns).toEqual(['id', 'name', 'age']);
+            const row1 = await format.readRow();
+            expect(row1).toEqual([1, 'John', 33]);
+            await format.close();
+        });
+        test('should re-open', async () => {
+            const format = new IterableFormatReader({
+                provider: someAsyncSource,
+            });
+            await format.open();
+            const header = await format.readHeader();
+            expect(header.columns).toEqual(['id', 'name', 'age']);
+            const row1 = await format.readRow();
+            expect(row1).toEqual([1, 'John', 33]);
+            await format.close();
+            await format.open();
+            const headerBis = await format.readHeader();
+            expect(headerBis.columns).toEqual(['id', 'name', 'age']);
+            const row1Bis = await format.readRow();
+            expect(row1Bis).toEqual([1, 'John', 33]);
+            await format.close();
+        });
+        test('should open first', async () => {
+            const format = new IterableFormatReader({
+                provider: someAsyncSource,
+            });
+            await expect(async () => {
+                await format.readHeader();
+            }).rejects.toThrowError('You must call open before reading content!');
+        });
+        test('should open once', async () => {
+            const format = new IterableFormatReader({
+                provider: someAsyncSource,
+            });
+            await format.open();
+            await expect(async () => {
+                await format.open();
+            }).rejects.toThrowError('Reader is already open!')            
+        });
+        test('should not be empty', async () => {
+            const format = new IterableFormatReader({
+                provider: () => someAsyncSource(0),
+            });
+            await format.open();
+            try {
+                await expect(async () => {
+                    await format.readHeader();
+                }).rejects.toThrowError('Expected to find at least one object');    
+            } finally {
+                format.close();
+            }
+        });
+    });
 });
+
+async function *someAsyncSource(limit?: number) {
+    let items = [
+        {
+            id: 1,
+            name: 'John',
+            age: 33,
+        },
+        {
+            id: 2,
+            name: 'Mary',
+            age: 22,
+        },
+        {
+            id: 3,
+            name: 'Cindy',
+            age: 44,
+        },
+    ];  
+    if (limit !== undefined){
+        items = items.slice(0, limit);
+    }
+    for (const item of items) {
+        yield item;
+    }
+}
+

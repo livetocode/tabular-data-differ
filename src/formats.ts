@@ -1,4 +1,6 @@
-import { InputStream, OutputStream } from "./streams";
+import { getOrCreateInputStream, getOrCreateOutputStream, InputStream, InputStreamOptions, OutputStream, OutputStreamOptions, TextReader, TextWriter } from "./streams";
+
+export const defaultStatusColumnName = 'DIFF_STATUS';
 
 export type CellValue = string | number | boolean | null;
 
@@ -33,10 +35,34 @@ export interface RowDiff {
 
 export type RowDiffFilter = (rowDiff: RowDiff) => boolean;
 
-export interface FormatReaderOptions {
-    stream: InputStream;
+/**
+ * Shared option for some destination formats such as CSV or JSON.
+ */
+export type KeepOldValuesOptions = {
+    /**
+     * Specifies if the output should contain both the old and new values for each row.
+     */
+     keepOldValues?: boolean;
+};
+
+export type CsvFormatReaderOptions = {
     delimiter?: string;
-}
+} & InputStreamOptions;
+
+export type CsvFormatWriterOptions = {
+    delimiter?: string;
+    statusColumnName?: string;
+} & OutputStreamOptions & KeepOldValuesOptions;
+
+export type JsonFormatReaderOptions = {
+} & InputStreamOptions;
+
+export type JsonFormatWriterOptions = {
+} & OutputStreamOptions & KeepOldValuesOptions;
+
+export type IterableFormatReaderOptions = {
+    provider: () => AsyncIterable<any>;
+};
 
 export interface FormatHeader {
     columns: string[];
@@ -49,8 +75,6 @@ export interface FormatReader {
     readRow(): Promise<Row | undefined>;
     close(): Promise<void>;
 }
-
-export type FormatReaderFactory = (options: FormatReaderOptions) => FormatReader;
 
 export class DiffStats {
     totalComparisons = 0;
@@ -102,32 +126,342 @@ export interface FormatWriter {
 export type FormatWriterFactory = (options: FormatWriterOptions) => FormatWriter;
 
 
+export abstract class StreamFormatReader implements FormatReader {
+    protected readonly stream: InputStream;
+    protected readonly encoding?: BufferEncoding;
 
-export class CsvFormatReader implements FormatReader {
-    private readonly stream: InputStream;
-    private readonly delimiter: string;
-
-    constructor(options: FormatReaderOptions) {
-        this.stream = options.stream;
-        this.delimiter = options.delimiter ?? ',';
+    constructor(options: InputStreamOptions) {
+        this.stream =  getOrCreateInputStream(options.stream);
+        this.encoding = options.encoding;
     }
 
-    open(): Promise<void> {
-        return this.stream.open();
+    async open(): Promise<void> {
+        await this.stream.open();
+    }
+
+    abstract readHeader(): Promise<FormatHeader>;
+
+    abstract readRow(): Promise<Row | undefined>;
+
+    async close(): Promise<void> {
+        await this.stream.close();        
+    }
+
+}
+
+export abstract class TextFormatReader extends StreamFormatReader {
+    private _textReader?: TextReader;
+
+    protected get textReader() {
+        if (!this._textReader) {
+            throw new Error('Cannot access textReader because stream is not open');
+        }
+        return this._textReader;
+    }
+    
+    async open(): Promise<void> {
+        await super.open();
+        this._textReader = this.stream.createTextReader({ encoding: this.encoding });
+    }
+
+    async close(): Promise<void> {
+        if (this.textReader) {
+            await this.textReader.close();
+            this._textReader = undefined;
+        }
+        await super.close();
+    }
+}
+
+export abstract class StreamFormatWriter implements FormatWriter {
+    protected readonly stream: OutputStream;
+    protected readonly encoding?: BufferEncoding;
+
+    constructor(options: OutputStreamOptions) {
+        this.stream =  getOrCreateOutputStream(options.stream);
+        this.encoding = options.encoding;
+    }
+
+    async open(): Promise<void> {
+        await this.stream.open();
+    }
+
+
+    async close(): Promise<void> {
+        await this.stream.close();        
+    }
+
+    abstract writeHeader(header: FormatHeader): Promise<void>;
+
+    abstract writeDiff(rowDiff: RowDiff): Promise<void>;
+
+    abstract writeFooter(footer: FormatFooter): Promise<void>;
+}
+
+export abstract class TextFormatWriter extends StreamFormatWriter {
+    private _textWriter?: TextWriter;
+
+    protected get textWriter() {
+        if (!this._textWriter) {
+            throw new Error('Cannot access textWriter because stream is not open');
+        }
+        return this._textWriter;
+    }
+    
+    async open(): Promise<void> {
+        await super.open();
+        this._textWriter = this.stream.createTextWriter({ encoding: this.encoding });
+    }
+
+    async close(): Promise<void> {
+        if (this.textWriter) {
+            await this.textWriter.close();
+            this._textWriter = undefined;
+        }
+        await super.close();
+    }
+}
+
+export class CsvFormatReader extends TextFormatReader {
+    private readonly delimiter: string;
+
+    constructor(options: CsvFormatReaderOptions) {
+        super(options);
+        this.delimiter = options.delimiter ?? ',';
     }
 
     async readHeader(): Promise<FormatHeader> {
         return {
-            columns: parseCsvLine(this.delimiter, await this.stream.readLine()) ?? [],
+            columns: parseCsvLine(this.delimiter, await this.textReader.readLine()) ?? [],
         };
     }
 
     async readRow(): Promise<Row | undefined> {
-        return parseCsvLine(this.delimiter, await this.stream.readLine());
+        return parseCsvLine(this.delimiter, await this.textReader.readLine());
+    }
+}
+
+export class JsonFormatReader extends TextFormatReader {
+    private headerObj: any;
+    private columns: string[] = [];
+
+    constructor(options: JsonFormatReaderOptions) {
+        super(options);
+    }
+
+    async open(): Promise<void> {
+        this.headerObj = null;
+        this.columns = [];
+        await super.open();
+    }
+
+    async readHeader(): Promise<FormatHeader> {
+        let line = await this.textReader.readLine();
+        this.headerObj = parseJsonObj(line);
+        if (!this.headerObj) {
+            // if the obj is undefined, it might mean that we just started an array with a single line containing '['
+            // so, process the next line
+            line = await this.textReader.readLine();
+            this.headerObj = parseJsonObj(line);
+        }
+        if (!this.headerObj) {
+            throw new Error('Expected to find at least one object');
+        }
+        this.columns = Object.keys(this.headerObj);
+        return {
+            columns: this.columns,
+        };
+    }
+
+    async readRow(): Promise<Row | undefined> {
+        if (this.headerObj) {
+            const row = convertJsonObjToRow(this.headerObj, this.columns);
+            this.headerObj = null;
+            return row;
+        }
+        const line = await this.textReader.readLine();
+        const obj = parseJsonObj(line);
+        const row = convertJsonObjToRow(obj, this.columns);
+
+        return row;
+    }
+}
+
+export class IterableFormatReader implements FormatReader {
+    private headerObj: any;
+    private columns: string[] = [];
+    private iterable: () => AsyncIterable<any>;
+    private iterator?: AsyncIterator<any>;
+
+    constructor(options: IterableFormatReaderOptions) {
+        this.iterable = options.provider;
+    }
+
+    open(): Promise<void> {
+        if (this.iterator) {
+            throw new Error('Reader is already open!');
+        }
+        this.headerObj = null;
+        this.columns = [];
+        this.iterator = this.iterable()[Symbol.asyncIterator]();
+        return Promise.resolve();
+    }
+
+    async readHeader(): Promise<FormatHeader> {
+        if (!this.headerObj) {
+            this.headerObj = await this.nextItem();
+        }
+        if (!this.headerObj) {
+            throw new Error('Expected to find at least one object');
+        }
+        this.columns = Object.keys(this.headerObj);
+        return {
+            columns: this.columns,
+        };
+    }
+
+    async readRow(): Promise<Row | undefined> {
+        if (this.headerObj) {
+            const row = convertJsonObjToRow(this.headerObj, this.columns);
+            this.headerObj = null;
+            return row;
+        }
+        const obj = await this.nextItem();
+        const row = convertJsonObjToRow(obj, this.columns);
+        return row;
     }
 
     close(): Promise<void> {
-        return this.stream.close();        
+        if (this.iterator) {
+            if (this.iterator.return) {
+                this.iterator.return();
+            }
+            this.iterator = undefined;
+        }
+        return Promise.resolve();
+    }
+
+    private async nextItem(): Promise<any> {
+        if (!this.iterator) {
+            throw new Error('You must call open before reading content!');
+        }
+        const res = await this.iterator.next();
+        if (res.done) {
+            this.iterator = undefined;
+            return undefined;
+        }
+        return res.value;
+    }
+}
+
+export class CsvFormatWriter extends TextFormatWriter {
+    private readonly delimiter: string;
+    private readonly keepOldValues: boolean;
+    private readonly statusColumnName: string;
+
+    constructor(options: CsvFormatWriterOptions) {
+        super(options);
+        this.delimiter = options.delimiter ?? ',';
+        this.keepOldValues = options.keepOldValues ?? false;
+        this.statusColumnName = options.statusColumnName ?? defaultStatusColumnName;
+    }
+
+    writeHeader(header: FormatHeader): Promise<void> {
+        const columns = [this.statusColumnName, ...header.columns];
+        if (this.keepOldValues) {
+            columns.push(...header.columns.map(col => 'OLD_' + col));
+        }
+        return this.textWriter.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
+    }
+
+    async writeDiff(rowDiff: RowDiff): Promise<void> {
+        if (rowDiff.oldRow && rowDiff.newRow) {
+            const row = [rowDiff.status, ...rowDiff.newRow];
+            if (this.keepOldValues) {
+                row.push(...rowDiff.oldRow);
+            }
+            await this.textWriter.writeLine(serializeRowAsCsvLine(row, this.delimiter));
+        } else if (rowDiff.oldRow) {
+            if (this.keepOldValues) {
+                const emptyRow = rowDiff.oldRow.map(_ => '');
+                await this.textWriter.writeLine(serializeRowAsCsvLine([rowDiff.status, ...emptyRow, ...rowDiff.oldRow], this.delimiter));
+            } else {
+                await this.textWriter.writeLine(serializeRowAsCsvLine([rowDiff.status, ...rowDiff.oldRow], this.delimiter));
+
+            }
+        } else if (rowDiff.newRow) {
+            const row = [rowDiff.status, ...rowDiff.newRow];
+            if (this.keepOldValues) {
+                const emptyRow = rowDiff.newRow.map(_ => '');
+                row.push(...emptyRow);
+            }
+            await this.textWriter.writeLine(serializeRowAsCsvLine(row, this.delimiter));
+        }
+    }
+
+    writeFooter(footer: FormatFooter): Promise<void> {
+        return Promise.resolve();
+    }
+}
+
+export class JsonFormatWriter extends TextFormatWriter {
+    private readonly keepOldValues: boolean;
+    private rowCount: number = 0;
+
+    constructor(options: JsonFormatWriterOptions) {
+        super(options);
+        this.keepOldValues = options.keepOldValues ?? false;
+    }
+
+    writeHeader(header: FormatHeader): Promise<void> {
+        this.rowCount = 0;
+        const h = JSON.stringify(header);
+        return this.textWriter.writeLine(`{ "header": ${h}, "items": [`);
+    }
+
+    writeDiff(rowDiff: RowDiff): Promise<void> {
+        const record: any = {
+            status: rowDiff.status,
+        };
+        if (this.keepOldValues) {
+            if (rowDiff.newRow) {
+                record.new = rowDiff.newRow;
+            }
+            if (rowDiff.oldRow) {
+                record.old = rowDiff.oldRow;
+            }    
+        } else {
+            record.data = rowDiff.newRow ?? rowDiff.oldRow;
+        }
+        const separator = this.rowCount === 0 ? '' : ',';
+        this.rowCount++;
+        return this.textWriter.writeLine(separator + JSON.stringify(record));
+    }
+
+    writeFooter(footer: FormatFooter): Promise<void> {
+        return this.textWriter.writeLine(`], "footer": ${JSON.stringify(footer)}}`);
+    }
+}
+
+export class NullFormatWriter implements FormatWriter {
+    open(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    writeHeader(header: FormatHeader): Promise<void> {
+        return Promise.resolve();
+    }
+
+    writeDiff(rowDiff: RowDiff): Promise<void> {
+        return Promise.resolve();
+    }
+
+    writeFooter(footer: FormatFooter): Promise<void> {
+        return Promise.resolve();
+    }
+
+    close(): Promise<void> {
+        return Promise.resolve();
     }
 }
 
@@ -170,188 +504,6 @@ export function convertJsonObjToRow(obj: any, columns: string[]): Row | undefine
         return `${val}`;
     });
     return row;
-}
-
-export class JsonFormatReader implements FormatReader {
-    private readonly stream: InputStream;
-    private headerObj: any;
-    private columns: string[] = [];
-
-    constructor(options: FormatReaderOptions) {
-        this.stream = options.stream;
-    }
-
-    open(): Promise<void> {
-        this.headerObj = null;
-        this.columns = [];
-        return this.stream.open();
-    }
-
-    async readHeader(): Promise<FormatHeader> {
-        let line = await this.stream.readLine();
-        this.headerObj = parseJsonObj(line);
-        if (!this.headerObj) {
-            // if the obj is undefined, it might mean that we just started an array with a single line containing '['
-            // so, process the next line
-            line = await this.stream.readLine();
-            this.headerObj = parseJsonObj(line);
-        }
-        if (!this.headerObj) {
-            throw new Error('Expected to find at least one object');
-        }
-        this.columns = Object.keys(this.headerObj);
-        return {
-            columns: this.columns,
-        };
-    }
-
-    async readRow(): Promise<Row | undefined> {
-        if (this.headerObj) {
-            const row = convertJsonObjToRow(this.headerObj, this.columns);
-            this.headerObj = null;
-            return row;
-        }
-        const line = await this.stream.readLine();
-        const obj = parseJsonObj(line);
-        const row = convertJsonObjToRow(obj, this.columns);
-
-        return row;
-    }
-
-    close(): Promise<void> {
-        return this.stream.close();        
-    }
-}
-
-const defaultStatusColumnName = 'DIFF_STATUS';
-
-export class CsvFormatWriter implements FormatWriter{
-    private readonly stream: OutputStream;
-    private readonly delimiter: string;
-    private readonly keepOldValues: boolean;
-    private readonly statusColumnName: string;
-
-    constructor(options: FormatWriterOptions) {
-        this.stream = options.stream;
-        this.delimiter = options.delimiter ?? ',';
-        this.keepOldValues = options.keepOldValues ?? false;
-        this.statusColumnName = options.statusColumnName ?? defaultStatusColumnName;
-    }
-
-    open(): Promise<void> {
-        return this.stream.open();        
-    }
-
-    writeHeader(header: FormatHeader): Promise<void> {
-        const columns = [this.statusColumnName, ...header.columns];
-        if (this.keepOldValues) {
-            columns.push(...header.columns.map(col => 'OLD_' + col));
-        }
-        return this.stream.writeLine(serializeRowAsCsvLine(columns, this.delimiter));
-    }
-
-    async writeDiff(rowDiff: RowDiff): Promise<void> {
-        if (rowDiff.oldRow && rowDiff.newRow) {
-            const row = [rowDiff.status, ...rowDiff.newRow];
-            if (this.keepOldValues) {
-                row.push(...rowDiff.oldRow);
-            }
-            await this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
-        } else if (rowDiff.oldRow) {
-            if (this.keepOldValues) {
-                const emptyRow = rowDiff.oldRow.map(_ => '');
-                await this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...emptyRow, ...rowDiff.oldRow], this.delimiter));
-            } else {
-                await this.stream.writeLine(serializeRowAsCsvLine([rowDiff.status, ...rowDiff.oldRow], this.delimiter));
-
-            }
-        } else if (rowDiff.newRow) {
-            const row = [rowDiff.status, ...rowDiff.newRow];
-            if (this.keepOldValues) {
-                const emptyRow = rowDiff.newRow.map(_ => '');
-                row.push(...emptyRow);
-            }
-            await this.stream.writeLine(serializeRowAsCsvLine(row, this.delimiter));
-        }
-    }
-
-    writeFooter(footer: FormatFooter): Promise<void> {
-        return Promise.resolve();
-    }
-
-    close(): Promise<void> {
-        return this.stream.close();
-    }
-}
-
-export class JsonFormatWriter implements FormatWriter{
-    private readonly stream: OutputStream;
-    private readonly keepOldValues: boolean;
-    private rowCount: number = 0;
-
-    constructor(options: FormatWriterOptions) {
-        this.stream = options.stream;
-        this.keepOldValues = options.keepOldValues ?? false;
-    }
-
-    open(): Promise<void> {
-        return this.stream.open();    
-    }
-
-    writeHeader(header: FormatHeader): Promise<void> {
-        this.rowCount = 0;
-        const h = JSON.stringify(header);
-        return this.stream.writeLine(`{ "header": ${h}, "items": [`);
-    }
-
-    writeDiff(rowDiff: RowDiff): Promise<void> {
-        const record: any = {
-            status: rowDiff.status,
-        };
-        if (this.keepOldValues) {
-            if (rowDiff.newRow) {
-                record.new = rowDiff.newRow;
-            }
-            if (rowDiff.oldRow) {
-                record.old = rowDiff.oldRow;
-            }    
-        } else {
-            record.data = rowDiff.newRow ?? rowDiff.oldRow;
-        }
-        const separator = this.rowCount === 0 ? '' : ',';
-        this.rowCount++;
-        return this.stream.writeLine(separator + JSON.stringify(record));
-    }
-
-    writeFooter(footer: FormatFooter): Promise<void> {
-        return this.stream.writeLine(`], "footer": ${JSON.stringify(footer)}}`);
-    }
-
-    close(): Promise<void> {
-        return this.stream.close();   
-    }
-}
-
-export class NullFormatWriter implements FormatWriter {
-    open(): Promise<void> {
-        return Promise.resolve();
-    }
-
-    writeHeader(header: FormatHeader): Promise<void> {
-        return Promise.resolve();
-    }
-
-    writeDiff(rowDiff: RowDiff): Promise<void> {
-        return Promise.resolve();
-    }
-
-    writeFooter(footer: FormatFooter): Promise<void> {
-        return Promise.resolve();
-    }
-
-    close(): Promise<void> {
-        return Promise.resolve();
-    }
 }
 
 export function parseCsvLine(delimiter: string, line?: string): string[] | undefined {
@@ -513,3 +665,5 @@ export function roundDecimals(value: number, decimals: number) {
     const pow = Math.pow(10, decimals)
     return Math.round(value * pow) / pow
 }
+
+
