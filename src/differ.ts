@@ -618,7 +618,6 @@ export class DifferContext {
     }
 
     private async getNextPair():Promise<RowPair> {
-        // TODO: parallelize
         const oldRow = await this.getNextOldRow();
         const newRow = await this.getNextNewRow();
         return { oldRow, newRow };
