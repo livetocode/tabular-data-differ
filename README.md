@@ -35,8 +35,8 @@ while loading at most two rows of data in memory.
 
 If your data is not already sorted, you can use my other lib https://github.com/livetocode/huge-csv-sorter, which can sort a huge file very efficiently thanks to SQLite.
 
-This allows us to diff two 600MB files containing 2.6 millions of rows and 37 columns in 22 seconds on my MacBook Pro.
-Or two 250 MB files containing 4 millions of rows and 7 columns in 12 seconds.
+This allows us to diff two 600MB files containing 2.6 millions of rows and 37 columns in 18 seconds on my MacBook Pro.
+Or two 250 MB files containing 4 millions of rows and 7 columns in 10 seconds.
 
 # Features
 

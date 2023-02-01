@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { describe, expect, test } from '@jest/globals';
-import { DifferOptions, diff, UnorderedStreamsError, Differ, UniqueKeyViolationError } from './differ';
-import { FormatWriter, FormatHeader, RowDiff, FormatFooter, CsvFormatReader } from './formats';
+import { DifferOptions, diff, UnorderedStreamsError, Differ, UniqueKeyViolationError, sameRowDiff } from './differ';
+import { FormatWriter, FormatHeader, RowDiff, FormatFooter, CsvFormatReader, defaultRowComparer, Column } from './formats';
 import { ArrayInputStream, FileOutputStream, NullOutputStream } from './streams';
 
 class FakeFormatWriter implements FormatWriter{
@@ -317,6 +317,395 @@ describe('differ', () => {
             expect(diffs2.length).toBe(11);
             expect(diffs2).toEqual(diffs);
         });
+    });
+    describe('sameRowDiff', () => {
+        test('should detect both undefined objects', () => {
+            const res = sameRowDiff(defaultRowComparer, [], undefined, undefined);
+            expect(res).toBeTruthy();
+        });
+        test('should detect both identical objects', () => {
+            const diff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: [],
+            }
+            const res = sameRowDiff(defaultRowComparer, [], diff, diff);
+            expect(res).toBeTruthy();
+        });
+        test('should detect old undefined', () => {
+            const diff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: [],
+            }
+            const res = sameRowDiff(defaultRowComparer, [], diff, undefined);
+            expect(res).toBeFalsy();
+        });
+        test('should detect new undefined', () => {
+            const diff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: [],
+            }
+            const res = sameRowDiff(defaultRowComparer, [], undefined, diff);
+            expect(res).toBeFalsy();
+        });
+        test('should detect both same', () => {
+            const oldDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                newRow: ['1', 'abc'],
+                oldRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                newRow: ['1', 'abc'],
+                oldRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });
+        test('should ignore both same with different values', () => {
+            const oldDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                newRow: ['1', 'abc'],
+                oldRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                newRow: ['1', 'def'],
+                oldRow: ['1', 'def'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeFalsy();
+        });
+        test('should ignore both same with same content but different keys', () => {
+            const oldDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                newRow: ['1', 'abc'],
+                oldRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                newRow: ['2', 'abc'],
+                oldRow: ['2', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeFalsy();
+        });
+        test('should detect both modified', () => {
+            const oldDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'def'],
+                newRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'def'],
+                newRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });
+        test('should ignore both modified with modified content', () => {
+            const oldDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'abc'],
+                newRow: ['1', 'def'],
+            };
+            const newDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'ghi'],
+                newRow: ['1', 'klm'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeFalsy();
+        });
+        test('should ignore both modified with same content but different keys', () => {
+            const oldDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'abc'],
+                newRow: ['1', 'def'],
+            };
+            const newDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['2', 'abc'],
+                newRow: ['2', 'def'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeFalsy();
+        });
+        test('should detect both added', () => {
+            const oldDiff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });
+        test('should detect both deleted', () => {
+            const oldDiff: RowDiff = {
+                status: 'deleted',
+                delta: -1,
+                oldRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'deleted',
+                delta: -1,
+                oldRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });
+        test('should ignore different status with different content', () => {
+            const oldDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'def'],
+                newRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                oldRow: ['1', 'def'],
+                newRow: ['1', 'def'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeFalsy();
+        });        
+        test('should detect added row with same content as previous modified diff', () => {
+            const oldDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'abc'],
+                newRow: ['1', 'def'],
+            };
+            const newDiff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: ['1', 'def'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });        
+        test('should detect added row with same content as previous unmodified diff', () => {
+            const oldDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                oldRow: ['1', 'abc'],
+                newRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'added',
+                delta: 1,
+                newRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });        
+        test('should detect deleted row with same content as previous modified diff', () => {
+            const oldDiff: RowDiff = {
+                status: 'modified',
+                delta: 0,
+                oldRow: ['1', 'abc'],
+                newRow: ['1', 'def'],
+            };
+            const newDiff: RowDiff = {
+                status: 'deleted',
+                delta: -1,
+                oldRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });        
+        test('should detect deleted row with same content as previous unmodified diff', () => {
+            const oldDiff: RowDiff = {
+                status: 'same',
+                delta: 0,
+                oldRow: ['1', 'abc'],
+                newRow: ['1', 'abc'],
+            };
+            const newDiff: RowDiff = {
+                status: 'deleted',
+                delta: -1,
+                oldRow: ['1', 'abc'],
+            };
+            const cols: Column[] = [
+                {
+                    name: 'id',
+                    newIndex: 0,
+                    oldIndex: 0,                    
+                },
+                {
+                    name: 'name',
+                    newIndex: 1,
+                    oldIndex: 1,                    
+                },
+            ]
+            const res = sameRowDiff(defaultRowComparer, cols, newDiff, oldDiff);
+            expect(res).toBeTruthy();
+        });                
     });
     describe('changes', () => {        
         test('both files are empty', async () => {
@@ -2401,9 +2790,11 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                     stream: new ArrayInputStream([
                         '[',
                         '{"id":1, "name":"john", "active": true, "cash": null}',
-                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
-                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}', // same and duplicate
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}', // same and duplicate
                         '{"id":3, "name":"sarah", "active": true, "cash": 500}',
+                        '{"id":8, "name":"lily", "active": true, "cash": 100}', // deleted row and duplicate
+                        '{"id":8, "name":"lily", "active": true, "cash": 100}', // deleted row and duplicate
                         ']'
                     ]),
                     format: 'json',
@@ -2412,28 +2803,33 @@ added,pear,3,Pear,Fruit,0.35,,,,,
                     stream: new ArrayInputStream([
                         '[',
                         '{"id":1, "name":"john", "active": true, "cash": 1234.99}',
-                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
-                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}',
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}', // same and duplicate
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}', // same and duplicate
+                        '{"id":2, "name":"mary", "active": false, "cash": 3210.22}', // same and duplicate
                         '{"id":3, "name":"sarah", "active": true, "cash": 600}',
+                        '{"id":4, "name":"david", "active": false, "cash": 700}', // added and duplicate
+                        '{"id":4, "name":"david", "active": false, "cash": 700}', // added and duplicate
                         ']'
                     ]),
                     format: 'json',
                 },
                 keys: ['id'],
             }).to('./output/files/output.csv');
+            const output = readAllText('./output/files/output.csv');
             expect(stats).toEqual({
-                totalComparisons: 3,
-                totalChanges: 2,
-                changePercent: 66.67,
-                added: 0,
-                deleted: 0,
+                totalComparisons: 5,
+                totalChanges: 4,
+                changePercent: 80,
+                added: 1,
+                deleted: 1,
                 modified: 2,
                 same: 1
             });
-            const output = readAllText('./output/files/output.csv');
             expect(output).toBe(`DIFF_STATUS,id,name,active,cash
 modified,1,john,true,1234.99
 modified,3,sarah,true,600
+added,4,david,false,700
+deleted,8,lily,true,100
 `);
         });                     
         test('should ignore duplicate rows, with multiple keys', async () => {

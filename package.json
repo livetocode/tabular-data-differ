@@ -1,6 +1,6 @@
 {
   "name": "tabular-data-differ",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A very efficient library for diffing two sorted streams of tabular data, such as CSV files.",
   "keywords": [
     "table",

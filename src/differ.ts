@@ -517,6 +517,7 @@ export class DifferContext {
         try {
             let pairProvider: RowPairProvider = () => this.getNextPair();
             let previousPair: RowPair = {}
+            let previousRowDiff: RowDiff | undefined;
             while (true) {
                 const pair = await pairProvider();
 
@@ -525,10 +526,8 @@ export class DifferContext {
                 }
 
                 const rowDiff = this.evalPair(pair);
-
-                const isDuplicate = this.ensurePairsAreInAscendingOrder(rowDiff, previousPair, pair);
-                previousPair = pair;
-                if (!isDuplicate) {
+                if (!sameRowDiff(this.comparer, this._columns, rowDiff, previousRowDiff)) {
+                    this.ensurePairsAreInAscendingOrder(previousPair, pair);
                     this.stats.add(rowDiff);
                     yield rowDiff;        
                 }
@@ -540,6 +539,8 @@ export class DifferContext {
                 } else {
                     pairProvider = async () => ({ oldRow: await this.getNextOldRow(), newRow: pair.newRow });
                 }
+                previousPair = pair;
+                previousRowDiff = rowDiff;
             }
         } finally {
             this.close();
@@ -637,19 +638,10 @@ export class DifferContext {
         return { delta, status: 'added', newRow };        
     }
 
-    private ensureRowsAreInAscendingOrder(source: string, rowDiff: RowDiff, previous?: Row, current?: Row) {
+    private ensureRowsAreInAscendingOrder(source: string, previous?: Row, current?: Row) {
         if (previous && current && previous !== current) {
             const oldDelta = this.comparer(this.keys, previous, current);
             if (oldDelta === 0) {
-                if (rowDiff.status === 'same') {
-                    const isSame = this.columnsWithoutKeys.length === 0 ?
-                                        true :
-                                        this.comparer(this.columnsWithoutKeys, previous, current) === 0;
-                    if (isSame) {
-                        // ignore duplicate rows
-                        return true;
-                    }    
-                }
                 const cols = this.keys.map(key => key.name);
                 throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
             }
@@ -658,13 +650,11 @@ export class DifferContext {
                 throw new UnorderedStreamsError(`Expected rows to be ordered by "${colOrder}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
             }        
         }
-        return false;
     }
 
-    private ensurePairsAreInAscendingOrder(rowDiff: RowDiff, previous: RowPair, current: RowPair) {
-        const isOldDuplicate = this.ensureRowsAreInAscendingOrder('old', rowDiff, previous.oldRow, current.oldRow);
-        const isNewDuplicate = this.ensureRowsAreInAscendingOrder('new', rowDiff, previous.newRow, current.newRow);
-        return isOldDuplicate && isNewDuplicate;
+    private ensurePairsAreInAscendingOrder(previous: RowPair, current: RowPair) {
+        this.ensureRowsAreInAscendingOrder('old', previous.oldRow, current.oldRow);
+        this.ensureRowsAreInAscendingOrder('new', previous.newRow, current.newRow);
     }
 }
 
@@ -695,4 +685,21 @@ export function sameArrays(a: string[], b: string[]) {
         }
     }
     return true;
+}
+
+export function sameRowDiff(comparer: RowComparer, columns: Column[], current?: RowDiff, previous?: RowDiff) {
+    if (current === previous) {
+        return true;
+    }
+    if (current === undefined || previous === undefined) {
+        return false;
+    }
+    if (current.status === 'added') {
+        return comparer(columns, current.newRow, previous.newRow) === 0; 
+    }
+    if (current.status === 'deleted') {
+        return comparer(columns, current.oldRow, previous.oldRow) === 0; 
+    }
+    return comparer(columns, current.newRow, previous.newRow) === 0 && 
+           comparer(columns, current.oldRow, previous.oldRow) === 0;
 }
