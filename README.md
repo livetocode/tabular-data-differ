@@ -98,7 +98,7 @@ const stats = await diff({
     newSource: './tests/b.csv',
     keys: [{
         name: 'id',
-        order: 'DESC',
+        sortDirection: 'DESC',
     }],
 }).to('console');
 console.log(stats);
@@ -516,11 +516,11 @@ labels          | no     |             | a dictionary of key/value pairs that c
 
 ### Key options (ColumnDefinition)
 
-Name     |Required|Default value|Description
----------|--------|-------------|-----------
-name     | yes    |             | the name of the column.
-comparer | no     | string      | either a standard comparer ('string' or 'number') or a custom comparer.
-order    | no     | ASC         | specifies if the column is in ascending (ASC) or descending (DESC) order.
+Name         |Required|Default value|Description
+-------------|--------|-------------|-----------
+name         | yes    |             | the name of the column.
+comparer     | no     | string      | either a standard comparer ('string' or 'number') or a custom comparer.
+sortDirection| no     | ASC         | specifies if the column is sorted in ascending (ASC) or descending (DESC) order.
 
 ### Differ options
 

@@ -4,7 +4,7 @@ export const defaultStatusColumnName = 'DIFF_STATUS';
 
 export type CellValue = string | number | boolean | null;
 
-export type ColumnOrdering = 'ASC' | 'DESC';
+export type SortDirection = 'ASC' | 'DESC';
 
 export type ColumnComparer = (a: CellValue, b: CellValue) => number;
 
@@ -13,7 +13,7 @@ export type Column = {
     oldIndex: number;
     newIndex: number;
     comparer?: ColumnComparer;
-    order?: ColumnOrdering;
+    sortDirection?: SortDirection;
 }
 
 export type Row = CellValue[];
@@ -651,7 +651,7 @@ export function defaultRowComparer(columns: Column[], a? : Row, b?: Row): number
         const bb = b![col.newIndex] ?? null;
         const comparer = col.comparer ?? cellComparer;
         let delta = comparer(aa, bb);
-        if (delta !== 0 && col.order === 'DESC') {
+        if (delta !== 0 && col.sortDirection === 'DESC') {
             delta = - delta;
         }
         if (delta !== 0) {

@@ -7,7 +7,7 @@ import {
     Row, 
     RowDiffFilter, 
     ColumnComparer, 
-    ColumnOrdering, 
+    SortDirection, 
     RowComparer, 
     FormatReader, 
     CsvFormatReader, 
@@ -194,7 +194,7 @@ export interface ColumnDefinition {
     /**
      * specifies if the column is in ascending (ASC) or descending (DESC) order.
      */
-    order?: ColumnOrdering;
+    order?: SortDirection;
 }
 
 /**
@@ -601,7 +601,7 @@ export class DifferContext {
                 result.push({
                     ...column,
                     comparer: asColumnComparer(key.comparer),
-                    order: key.order,
+                    sortDirection: key.order,
                 });
             } else {
                 throw new Error(`Could not find key '${key.name}' in new stream`);
@@ -646,7 +646,7 @@ export class DifferContext {
                 throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
             }
             if (oldDelta > 0) {
-                const colOrder = this.keys.map(key => `${key.name} ${key.order ?? 'ASC'}`);
+                const colOrder = this.keys.map(key => `${key.name} ${key.sortDirection ?? 'ASC'}`);
                 throw new UnorderedStreamsError(`Expected rows to be ordered by "${colOrder}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
             }        
         }
