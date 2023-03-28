@@ -1774,6 +1774,44 @@ describe('differ', () => {
                 same: 5        
             });
         });
+        test('should work with real source files (CSV) and support duplicate key handling', async () => {
+            const output = new FakeFormatWriter();
+            const differ = diff({
+                oldSource: './tests/a2.csv',
+                newSource: './tests/b2.csv',
+                keys: ['id'],
+                duplicateKeyHandling: 'keepFirstRow',
+            });
+            await differ.to({
+                destination: {
+                    format: 'custom',
+                    writer: output,
+                }
+            });
+            expect(output.header?.columns).toEqual([ 'id', 'a', 'b', 'c' ]);
+            expect(output.diffs).toEqual([
+                { delta: -1, status: 'deleted', oldRow: [ '01', 'a1', 'b1', 'c1' ] },
+                {
+                  delta: 0,
+                  status: 'modified',
+                  oldRow: [ '04', 'a4', 'b4', 'c4' ],
+                  newRow: [ '04', 'aa4', 'bb4', 'cc4' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '05', 'a5', 'b5', 'c5' ] },
+                { delta: -1, status: 'deleted', oldRow: [ '06', 'a6', 'b6', 'c6' ] },
+                { delta: 1, status: 'added', newRow: [ '10', 'a10', 'b10', 'c10' ] },
+            ]);
+            console.log(output.footer?.stats);
+            expect(output.footer?.stats).toEqual({
+                totalComparisons: 10,
+                totalChanges: 5,
+                changePercent: 50,
+                added: 1,
+                deleted: 3,
+                modified: 1,
+                same: 5
+            });
+        });
         test('should work with http streams (CSV)', async () => {
             const currentDir = process.cwd().replaceAll('\\', '/');
             const stats = await diff({

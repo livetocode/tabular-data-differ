@@ -127,10 +127,13 @@ export type FormatWriterFactory = (options: FormatWriterOptions) => FormatWriter
 
 export class BufferedFormatReader implements FormatReader {
     private peekedRow: Row | undefined;
+    private hasPeekedRow = false;
 
     constructor(private reader: FormatReader) {}
 
     open(): Promise<void> {
+        this.hasPeekedRow = false;
+        this.peekedRow = undefined;
         return this.reader.open();
     }
 
@@ -139,17 +142,19 @@ export class BufferedFormatReader implements FormatReader {
     }
     
     async peekRow(): Promise<Row | undefined> {
-        if (this.peekedRow) { 
+        if (this.hasPeekedRow) { 
             return this.peekedRow;
         }
         this.peekedRow = await this.reader.readRow();
+        this.hasPeekedRow = true;
         return this.peekedRow;
     }
 
     async readRow(): Promise<Row | undefined> {
-        if (this.peekedRow) {
+        if (this.hasPeekedRow) {
             const result = this.peekedRow;
             this.peekedRow = undefined;
+            this.hasPeekedRow = false;
             return result;
         }
         return await this.reader.readRow();
