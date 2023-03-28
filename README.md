@@ -122,6 +122,31 @@ const stats = await diff({
 console.log(stats);
 ```
 
+### Diff 2 CSV files on the console with a single case insensitive primary key (using a custom comparer)
+
+```Typescript
+import { diff, CellValue, cellComparer, stringComparer } from 'tabular-data-differ';
+
+function caseInsensitiveCompare((a: CellValue, b: CellValue): number {
+    if (typeof a === 'string' && typeof b === 'string') {
+        return stringComparer(a.toLowerCase(), b.toLowerCase());
+    }
+    return cellComparer(a, b);
+}
+
+const stats = await diff({
+    oldSource: './tests/a.csv',
+    newSource: './tests/b.csv',
+    keys: [
+        {
+            name: 'id',
+            comparer: caseInsensitiveCompare,
+        }
+    ],
+}).to('console');
+console.log(stats);
+```
+
 ### Diff 2 CSV files and only get the stats
 
 ```Typescript
@@ -293,6 +318,37 @@ const stats = await ctx.to({
 });
 console.log(stats);
 ```
+
+### Duplicate key handling
+
+If your data sources contain duplicate keys, then the diffing will fail by default, but you can configure this behavior using the duplicateKeyHandling option.
+
+You can resolve the conflict by keeping the first or last row of the duplicates:
+```Typescript
+import { diff } from 'tabular-data-differ';
+const stats = await diff({
+    oldSource: './tests/a.csv',
+    newSource: './tests/b.csv',
+    keys: ['id'],
+    duplicateKeyHandling: 'keepFirstRow', // or 'keepLastRow'
+    duplicateRowBufferSize: 2000,
+}).to('console');
+console.log(stats);
+```
+
+Or, if you need more control in the row selection, then you can provide your own handler:
+```Typescript
+import { diff } from 'tabular-data-differ';
+const stats = await diff({
+    oldSource: './tests/a.csv',
+    newSource: './tests/b.csv',
+    keys: ['id'],
+    duplicateKeyHandling: (rows) => rows[0], // same as 'keepFirstRow'
+    duplicateRowBufferSize: 2000,
+}).to('console');
+console.log(stats);
+```
+
 
 ### Order 2 CSV files and diff them on the console
 
@@ -524,14 +580,16 @@ sortDirection| no     | ASC         | specifies if the column is sorted in ascen
 
 ### Differ options
 
-Name            |Required|Default value|Description
-----------------|--------|-------------|-----------
-oldSource       | yes    |             | either a string filename, a URL or a SourceOptions
-newSource       | yes    |             | either a string filename, a URL or a SourceOptions
-keys            | yes    |             | the list of columns that form the primary key. This is required for comparing the rows. A key can be a string name or a {ColumnDefinition}
-includedColumns | no     |             | the list of columns to keep from the input sources. If not specified, all columns are selected.
-excludedColumns | no     |             | the list of columns to exclude from the input sources.
-rowComparer     | no     |             | specifies a custom row comparer.
+Name                  |Required|Default value|Description
+----------------------|--------|-------------|-----------
+oldSource             | yes    |             | either a string filename, a URL or a SourceOptions
+newSource             | yes    |             | either a string filename, a URL or a SourceOptions
+keys                  | yes    |             | the list of columns that form the primary key. This is required for comparing the rows. A key can be a string name or a {ColumnDefinition}
+includedColumns       | no     |             | the list of columns to keep from the input sources. If not specified, all columns are selected.
+excludedColumns       | no     |             | the list of columns to exclude from the input sources.
+rowComparer           | no     |             | specifies a custom row comparer.
+duplicateKeyHandling  |no      | fail        | specifies how to handle duplicate rows in a source. It will fail by default and throw a UniqueKeyViolationError exception. But you can ignore, keep the first or last row, or even provide your own function that will receive the duplicates and select the best candidate. 
+duplicateRowBufferSize|no      | 1000        | specifies the maximum size of the buffer used to accumulate duplicate rows.
 
 ### diff function
 

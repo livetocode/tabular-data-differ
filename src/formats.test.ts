@@ -1,4 +1,4 @@
-import { Column, defaultRowComparer, IterableFormatReader, JsonFormatReader, JsonFormatWriter, numberComparer, parseCsvLine, serializeRowAsCsvLine } from "./formats";
+import { BufferedFormatReader, Column, defaultRowComparer, IterableFormatReader, JsonFormatReader, JsonFormatWriter, numberComparer, parseCsvLine, serializeRowAsCsvLine } from "./formats";
 import { ArrayInputStream } from "./streams";
 
 describe('formats', () => {
@@ -455,6 +455,29 @@ describe('formats', () => {
             }
         });
     });
+    describe('BufferedFormatReader', () => {
+        test('should peek rows', async () => {
+            const format = new BufferedFormatReader(new IterableFormatReader({
+                provider: someAsyncSource,
+            }));
+            await format.open();
+            const header = await format.readHeader();
+            expect(header.columns).toEqual(['id', 'name', 'age']);
+            const row1 = await format.readRow();
+            expect(row1).toEqual([1, 'John', 33]);
+            const row2 = await format.peekRow();
+            expect(row2).toEqual([2, 'Mary', 22]);
+            const row2b = await format.peekRow();
+            expect(row2b).toBe(row2);
+            const row2c = await format.readRow();
+            expect(row2c).toBe(row2);
+            const row3 = await format.readRow();
+            expect(row3).toEqual([3, 'Cindy', 44]);
+            const row4 = await format.readRow();
+            expect(row4).toBeUndefined();
+            await format.close();
+        });
+    })
 });
 
 async function *someAsyncSource(limit?: number) {

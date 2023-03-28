@@ -29,6 +29,7 @@ import {
     JsonFormatWriterOptions,
     IterableFormatReaderOptions,
     IterableFormatReader,
+    BufferedFormatReader,
 } from "./formats";
 
 export class UnorderedStreamsError extends Error {
@@ -129,37 +130,6 @@ export type DestinationOptions =
     | CustomDestination;
 
 /**
- * Options for configuring an input stream that will be compared to another similar stream
- * in order to obtain the changes between those two sources.
- */
- export interface DifferOptions {
-    /**
-     * Configures the old source
-     */
-    oldSource: Filename | SourceOptions; 
-    /**
-     * Configures the new source
-     */
-    newSource: Filename | SourceOptions; 
-     /**
-      * Configures the primary keys used to compare the rows between the old and new sources
-      */
-    keys: (string | ColumnDefinition)[];
-    /**
-     * the list of columns to keep from the input sources. If not specified, all columns are selected.
-     */
-    includedColumns?: string[];
-    /**
-     * the list of columns to exclude from the input sources.
-     */
-    excludedColumns?: string[];
-    /**
-     * Specifies a custom row comparer
-     */
-    rowComparer?: RowComparer;
-}
-
-/**
  * Options for configuring the output destination of the changes emitted by the Differ object
  */
  export interface OutputOptions {
@@ -197,6 +167,10 @@ export interface ColumnDefinition {
     order?: SortDirection;
 }
 
+export type DuplicateKeyHandler = (rows: Row[]) => Row;
+
+export type DuplicateKeyHandling = 'fail' |'keepFirstRow' | 'keepLastRow' | DuplicateKeyHandler;
+
 /**
  * Options for configuring the Differ object that will traverse two input streams in parallel in order to compare their rows
  * and produce a change set.
@@ -226,6 +200,20 @@ export interface DifferOptions {
      * Specifies a custom row comparer
      */
     rowComparer?: RowComparer;
+    /**
+     * specifies how to handle duplicate rows in a source.
+     * It will fail by default and throw a UniqueKeyViolationError exception.
+     * But you can keep the first or last row, or even provide your own function that will receive the duplicates and select the best candidate.
+     * @default fail
+     * @see duplicateRowBufferSize
+     */
+    duplicateKeyHandling?: DuplicateKeyHandling;
+    /**
+     * specifies the maximum size of the buffer used to accumulate duplicate rows.
+     * @default 1000
+     * @see duplicateKeyHandling
+     */
+    duplicateRowBufferSize?: number;
 }
 
 /**
@@ -369,19 +357,23 @@ export class DifferContext {
     private _columnNames: string[] = [];
     private _isOpen = false;
     private _isClosed = false;
-    private oldSource: FormatReader;
-    private newSource: FormatReader;
+    private oldSource: BufferedFormatReader;
+    private newSource: BufferedFormatReader;
     private comparer: RowComparer = defaultRowComparer;
     private keys: Column[] = [];
     private _columns: Column[] = [];
     private columnsWithoutKeys: Column[] = [];
     private normalizeOldRow: RowNormalizer = row => row;
     private normalizeNewRow: RowNormalizer = row => row;
+    private duplicateKeyHandling: DuplicateKeyHandling;
+    private duplicateRowBufferSize: number;
 
     constructor(private options: DifferOptions) {
-        this.oldSource = createSource(options.oldSource);
-        this.newSource = createSource(options.newSource);
+        this.oldSource = new BufferedFormatReader(createSource(options.oldSource));
+        this.newSource = new BufferedFormatReader(createSource(options.newSource));
         this.comparer = options.rowComparer ?? defaultRowComparer;
+        this.duplicateKeyHandling = options.duplicateKeyHandling ?? 'fail';
+        this.duplicateRowBufferSize = options.duplicateRowBufferSize ?? 1000;
     }
 
     /**
@@ -517,7 +509,6 @@ export class DifferContext {
         try {
             let pairProvider: RowPairProvider = () => this.getNextPair();
             let previousPair: RowPair = {}
-            let previousRowDiff: RowDiff | undefined;
             while (true) {
                 const pair = await pairProvider();
 
@@ -526,11 +517,9 @@ export class DifferContext {
                 }
 
                 const rowDiff = this.evalPair(pair);
-                if (!sameRowDiff(this.comparer, this._columns, rowDiff, previousRowDiff)) {
-                    this.ensurePairsAreInAscendingOrder(previousPair, pair);
-                    this.stats.add(rowDiff);
-                    yield rowDiff;        
-                }
+                this.ensurePairsAreInAscendingOrder(previousPair, pair);
+                this.stats.add(rowDiff);
+                yield rowDiff;        
 
                 if (rowDiff.delta === 0) {
                     pairProvider = () => this.getNextPair();
@@ -540,7 +529,6 @@ export class DifferContext {
                     pairProvider = async () => ({ oldRow: await this.getNextOldRow(), newRow: pair.newRow });
                 }
                 previousPair = pair;
-                previousRowDiff = rowDiff;
             }
         } finally {
             this.close();
@@ -610,12 +598,12 @@ export class DifferContext {
         return result;
     }
 
-    private getNextOldRow(): Promise<Row | undefined> {
-        return this.oldSource.readRow();
+    private getNextOldRow(): Promise<Row | undefined> {        
+        return getNextRow(this.oldSource, this.duplicateKeyHandling, this.comparer, this.keys, this.duplicateRowBufferSize);
     }
 
     private getNextNewRow(): Promise<Row | undefined> {
-        return this.newSource.readRow();
+        return getNextRow(this.newSource, this.duplicateKeyHandling, this.comparer, this.keys, this.duplicateRowBufferSize);
     }
 
     private async getNextPair():Promise<RowPair> {
@@ -643,7 +631,7 @@ export class DifferContext {
             const oldDelta = this.comparer(this.keys, previous, current);
             if (oldDelta === 0) {
                 const cols = this.keys.map(key => key.name);
-                throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);
+                throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);    
             }
             if (oldDelta > 0) {
                 const colOrder = this.keys.map(key => `${key.name} ${key.sortDirection ?? 'ASC'}`);
@@ -687,19 +675,47 @@ export function sameArrays(a: string[], b: string[]) {
     return true;
 }
 
-export function sameRowDiff(comparer: RowComparer, columns: Column[], current?: RowDiff, previous?: RowDiff) {
-    if (current === previous) {
-        return true;
+async function getNextRow(
+    source: BufferedFormatReader, 
+    duplicateKeyHandling: DuplicateKeyHandling, 
+    comparer: RowComparer, 
+    keys: Column[],
+    duplicateRowBufferSize: number,
+): Promise<Row | undefined> {        
+    const row = await source.readRow();
+    if (!row) {
+        return row;
     }
-    if (current === undefined || previous === undefined) {
-        return false;
+    if (duplicateKeyHandling === 'fail') {
+        // Note that it will be further processed in ensureRowsAreInAscendingOrder
+        return row;
     }
-    if (current.status === 'added') {
-        return comparer(columns, current.newRow, previous.newRow) === 0; 
+    const nextRow = await source.peekRow();
+    if (!nextRow) {
+        return row;
     }
-    if (current.status === 'deleted') {
-        return comparer(columns, current.oldRow, previous.oldRow) === 0; 
-    }
-    return comparer(columns, current.newRow, previous.newRow) === 0 && 
-           comparer(columns, current.oldRow, previous.oldRow) === 0;
+    let isDuplicate = comparer(keys, nextRow, row) === 0;
+    if (isDuplicate) {
+        const duplicateRows: Row[] = [];
+        duplicateRows.push(row);
+        while(isDuplicate) {
+            const duplicateRow = await source.readRow();
+            if (duplicateRow) {
+                duplicateRows.push(duplicateRow);
+                if (duplicateRows.length > duplicateRowBufferSize) {
+                    throw new Error('Too many duplicate rows');
+                }
+            }
+            const nextRow = await source.peekRow();                        
+            isDuplicate = !!nextRow && comparer(keys, nextRow, row) === 0;
+        }
+        if (duplicateKeyHandling === 'keepFirstRow') {
+            return duplicateRows[0];
+        }
+        if (duplicateKeyHandling === 'keepLastRow') {
+            return duplicateRows[duplicateRows.length-1];
+        }
+        return duplicateKeyHandling(duplicateRows);
+    }    
+    return row;
 }

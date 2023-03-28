@@ -125,6 +125,40 @@ export interface FormatWriter {
 
 export type FormatWriterFactory = (options: FormatWriterOptions) => FormatWriter;
 
+export class BufferedFormatReader implements FormatReader {
+    private peekedRow: Row | undefined;
+
+    constructor(private reader: FormatReader) {}
+
+    open(): Promise<void> {
+        return this.reader.open();
+    }
+
+    readHeader(): Promise<FormatHeader> {
+        return this.reader.readHeader();
+    }
+    
+    async peekRow(): Promise<Row | undefined> {
+        if (this.peekedRow) { 
+            return this.peekedRow;
+        }
+        this.peekedRow = await this.reader.readRow();
+        return this.peekedRow;
+    }
+
+    async readRow(): Promise<Row | undefined> {
+        if (this.peekedRow) {
+            const result = this.peekedRow;
+            this.peekedRow = undefined;
+            return result;
+        }
+        return await this.reader.readRow();
+    }
+
+    close(): Promise<void> {
+        return this.reader.close();
+    }
+}
 
 export abstract class StreamFormatReader implements FormatReader {
     protected readonly stream: InputStream;
