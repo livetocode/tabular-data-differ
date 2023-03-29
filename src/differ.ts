@@ -210,10 +210,21 @@ export interface DifferOptions {
     duplicateKeyHandling?: DuplicateKeyHandling;
     /**
      * specifies the maximum size of the buffer used to accumulate duplicate rows.
+     * Note that the buffer size matters only when you provide a custom function to the duplicateKeyHandling, since it will receive the accumulated duplicates
+     * as an input parameter.
      * @default 1000
      * @see duplicateKeyHandling
      */
     duplicateRowBufferSize?: number;
+    /**
+     * specifies if we can remove the first entries of the buffer to continue adding new duplicate entries when reaching maximum capacity,
+     * to avoir throwing an error and halting the process.
+     * Note that the buffer size matters only when you provide a custom function to the duplicateKeyHandling, since it will receive the accumulated duplicates
+     * as an input parameter.
+     * @default false
+     * @see duplicateRowBufferSize
+     */
+    duplicateRowBufferOverflow?: boolean;
 }
 
 /**
@@ -373,7 +384,7 @@ export class DifferContext {
         this.newSource = new BufferedFormatReader(createSource(options.newSource));
         this.comparer = options.rowComparer ?? defaultRowComparer;
         this.duplicateKeyHandling = options.duplicateKeyHandling ?? 'fail';
-        this.duplicateRowBufferSize = options.duplicateRowBufferSize ?? 1000;
+        this.duplicateRowBufferSize = Math.max(5, options.duplicateRowBufferSize ?? 1000);
     }
 
     /**
@@ -598,12 +609,63 @@ export class DifferContext {
         return result;
     }
 
+    async getNextRow(source: BufferedFormatReader): Promise<Row | undefined> {        
+        const row = await source.readRow();
+        if (!row) {
+            return row;
+        }
+        if (this.duplicateKeyHandling === 'fail') {
+            // Note that it will be further processed in ensureRowsAreInAscendingOrder
+            return row;
+        }
+        const nextRow = await source.peekRow();
+        if (!nextRow) {
+            return row;
+        }
+        let isDuplicate = this.comparer(this.keys, nextRow, row) === 0;
+        if (isDuplicate) {
+            const duplicateRows: Row[] = [];
+            duplicateRows.push(row);
+            while(isDuplicate) {
+                const duplicateRow = await source.readRow();
+                if (duplicateRow) {
+                    if (this.duplicateKeyHandling !== 'keepFirstRow') {
+                        // we don't need to accumulate duplicate rows when we just have to return the first row!
+                        duplicateRows.push(duplicateRow);
+                    }
+                    if (this.duplicateKeyHandling === 'keepLastRow') {
+                        // we don't need to accumulate the previous rows when we just have to return the last row!
+                        duplicateRows.shift();
+                    }
+                    if (duplicateRows.length > this.duplicateRowBufferSize) {
+                        if (this.options.duplicateRowBufferOverflow) {
+                            // remove the first entry when we can overflow
+                            duplicateRows.shift();
+                        } else {
+                            throw new Error('Too many duplicate rows');
+                        }
+                    }
+                }
+                const nextRow = await source.peekRow();                        
+                isDuplicate = !!nextRow && this.comparer(this.keys, nextRow, row) === 0;
+            }
+            if (this.duplicateKeyHandling === 'keepFirstRow') {
+                return duplicateRows[0];
+            }
+            if (this.duplicateKeyHandling === 'keepLastRow') {
+                return duplicateRows[duplicateRows.length-1];
+            }
+            return this.duplicateKeyHandling(duplicateRows);
+        }    
+        return row;
+    }
+
     private getNextOldRow(): Promise<Row | undefined> {        
-        return getNextRow(this.oldSource, this.duplicateKeyHandling, this.comparer, this.keys, this.duplicateRowBufferSize);
+        return this.getNextRow(this.oldSource);
     }
 
     private getNextNewRow(): Promise<Row | undefined> {
-        return getNextRow(this.newSource, this.duplicateKeyHandling, this.comparer, this.keys, this.duplicateRowBufferSize);
+        return this.getNextRow(this.newSource);
     }
 
     private async getNextPair():Promise<RowPair> {
@@ -673,49 +735,4 @@ export function sameArrays(a: string[], b: string[]) {
         }
     }
     return true;
-}
-
-async function getNextRow(
-    source: BufferedFormatReader, 
-    duplicateKeyHandling: DuplicateKeyHandling, 
-    comparer: RowComparer, 
-    keys: Column[],
-    duplicateRowBufferSize: number,
-): Promise<Row | undefined> {        
-    const row = await source.readRow();
-    if (!row) {
-        return row;
-    }
-    if (duplicateKeyHandling === 'fail') {
-        // Note that it will be further processed in ensureRowsAreInAscendingOrder
-        return row;
-    }
-    const nextRow = await source.peekRow();
-    if (!nextRow) {
-        return row;
-    }
-    let isDuplicate = comparer(keys, nextRow, row) === 0;
-    if (isDuplicate) {
-        const duplicateRows: Row[] = [];
-        duplicateRows.push(row);
-        while(isDuplicate) {
-            const duplicateRow = await source.readRow();
-            if (duplicateRow) {
-                duplicateRows.push(duplicateRow);
-                if (duplicateRows.length > duplicateRowBufferSize) {
-                    throw new Error('Too many duplicate rows');
-                }
-            }
-            const nextRow = await source.peekRow();                        
-            isDuplicate = !!nextRow && comparer(keys, nextRow, row) === 0;
-        }
-        if (duplicateKeyHandling === 'keepFirstRow') {
-            return duplicateRows[0];
-        }
-        if (duplicateKeyHandling === 'keepLastRow') {
-            return duplicateRows[duplicateRows.length-1];
-        }
-        return duplicateKeyHandling(duplicateRows);
-    }    
-    return row;
 }

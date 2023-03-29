@@ -328,6 +328,73 @@ describe('differ', () => {
                 [ '3', 'dave bis', '444' ] 
             ]);
         });    
+        test('should detect duplicate keys and call aggregate function, with buffer overflow', async () => {
+            const dups = [];
+            for (let i = 0; i < 100; i++) {
+                dups.push(`3,dave bis${i},444`);
+            }
+            let duplicateRows: Row[] = [];
+            const duplicateKeyHandler: DuplicateKeyHandler = (rows) => {
+                if (duplicateRows.length === 0) {
+                    duplicateRows = rows;
+                }
+                return rows[rows.length - 1];
+            };
+            const writer = await diffStrings({
+                oldLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                    ...dups,
+                    '4,noemie,11',
+                ],
+                newLines: [
+                    'ID,NAME,AGE',
+                    '1,john,33',
+                    '2,rachel,22',
+                    '3,dave,44',
+                ],
+                keys: ['ID'],
+                duplicateKeyHandling: duplicateKeyHandler,
+                duplicateRowBufferOverflow: true,
+                duplicateRowBufferSize: 10,
+                keepSameRows: true,
+            });
+            expect(writer.diffs).toEqual([
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '1', 'john', '33' ],
+                  newRow: [ '1', 'john', '33' ]
+                },
+                {
+                  delta: 0,
+                  status: 'same',
+                  oldRow: [ '2', 'rachel', '22' ],
+                  newRow: [ '2', 'rachel', '22' ]
+                },
+                {
+                  delta: 0,
+                  status: 'modified',
+                  oldRow: [ '3', 'dave bis99', '444' ],
+                  newRow: [ '3', 'dave', '44' ]
+                },
+                { delta: -1, status: 'deleted', oldRow: [ '4', 'noemie', '11' ] }
+            ]);
+            expect(duplicateRows).toEqual([ 
+                [ '3', 'dave bis90', '444' ],
+                [ '3', 'dave bis91', '444' ],
+                [ '3', 'dave bis92', '444' ],
+                [ '3', 'dave bis93', '444' ],
+                [ '3', 'dave bis94', '444' ],
+                [ '3', 'dave bis95', '444' ],
+                [ '3', 'dave bis96', '444' ],
+                [ '3', 'dave bis97', '444' ],
+                [ '3', 'dave bis98', '444' ],
+                [ '3', 'dave bis99', '444' ]
+            ]);
+        });    
         test('should detect duplicate keys and throw an error when the buffer exceeds the limit', async () => {
             const dups = [];
             for (let i = 0; i < 10; i++) {
@@ -349,7 +416,7 @@ describe('differ', () => {
                     '3,dave,44',
                 ],
                 keys: ['ID'],
-                duplicateKeyHandling: 'keepLastRow',
+                duplicateKeyHandling: (rows) => rows[0],
                 duplicateRowBufferSize: 5,
                 keepSameRows: true,
             })).rejects.toThrowError('Too many duplicate rows');

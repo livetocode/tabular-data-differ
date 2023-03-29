@@ -331,7 +331,6 @@ const stats = await diff({
     newSource: './tests/b.csv',
     keys: ['id'],
     duplicateKeyHandling: 'keepFirstRow', // or 'keepLastRow'
-    duplicateRowBufferSize: 2000,
 }).to('console');
 console.log(stats);
 ```
@@ -349,6 +348,8 @@ const stats = await diff({
 console.log(stats);
 ```
 
+Note that you can specify the size of the buffer if you know that it cannot exceed this quantity, otherwise you can enable the **duplicateRowBufferOverflow** option,
+which will remove the first entries when it exceeds the allocated capacity, to avoid a failure.
 
 ### Order 2 CSV files and diff them on the console
 
@@ -580,16 +581,17 @@ sortDirection| no     | ASC         | specifies if the column is sorted in ascen
 
 ### Differ options
 
-Name                  |Required|Default value|Description
-----------------------|--------|-------------|-----------
-oldSource             | yes    |             | either a string filename, a URL or a SourceOptions
-newSource             | yes    |             | either a string filename, a URL or a SourceOptions
-keys                  | yes    |             | the list of columns that form the primary key. This is required for comparing the rows. A key can be a string name or a {ColumnDefinition}
-includedColumns       | no     |             | the list of columns to keep from the input sources. If not specified, all columns are selected.
-excludedColumns       | no     |             | the list of columns to exclude from the input sources.
-rowComparer           | no     |             | specifies a custom row comparer.
-duplicateKeyHandling  |no      | fail        | specifies how to handle duplicate rows in a source. It will fail by default and throw a UniqueKeyViolationError exception. But you can ignore, keep the first or last row, or even provide your own function that will receive the duplicates and select the best candidate. 
-duplicateRowBufferSize|no      | 1000        | specifies the maximum size of the buffer used to accumulate duplicate rows.
+Name                      |Required|Default value|Description
+--------------------------|--------|-------------|-----------
+oldSource                 | yes    |             | either a string filename, a URL or a SourceOptions
+newSource                 | yes    |             | either a string filename, a URL or a SourceOptions
+keys                      | yes    |             | the list of columns that form the primary key. This is required for comparing the rows. A key can be a string name or a {ColumnDefinition}
+includedColumns           | no     |             | the list of columns to keep from the input sources. If not specified, all columns are selected.
+excludedColumns           | no     |             | the list of columns to exclude from the input sources.
+rowComparer               | no     |             | specifies a custom row comparer.
+duplicateKeyHandling      |no      | fail        | specifies how to handle duplicate rows in a source. It will fail by default and throw a UniqueKeyViolationError exception. But you can ignore, keep the first or last row, or even provide your own function that will receive the duplicates and select the best candidate. 
+duplicateRowBufferSize    |no      | 1000        | specifies the maximum size of the buffer used to accumulate duplicate rows.
+duplicateRowBufferOverflow|no      | false       | specifies if we can remove the first entries of the buffer to continue adding new duplicate entries when reaching maximum capacity, to avoir throwing an error and halting the process.
 
 ### diff function
 
