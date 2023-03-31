@@ -168,7 +168,8 @@ describe('differ', () => {
                 keys: ['ID'],
             })).rejects.toThrowError(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in old source but received:
   previous=3,dave,44
-  current=3,dave bis,444`));
+  current=3,dave bis,444
+Note that you can resolve this conflict automatically using the duplicateKeyHandling option.`));
         });
         test('should detect primary key violation in new source', async () => {
             await expect(() => diffStrings({
@@ -189,7 +190,8 @@ describe('differ', () => {
                 keys: ['ID'],
             })).rejects.toThrowError(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in new source but received:
   previous=3,dave,44
-  current=3,dave bis,444`));
+  current=3,dave bis,444
+Note that you can resolve this conflict automatically using the duplicateKeyHandling option.`));
         });
         test('should detect duplicate keys and return the first row', async () => {
             const writer = await diffStrings({
@@ -1849,7 +1851,8 @@ describe('differ', () => {
                 keys: ['id'],
                 duplicateKeyHandling: 'keepFirstRow',
             });
-            await differ.to({
+            const ctx = await differ.start();
+            await ctx.to({
                 destination: {
                     format: 'custom',
                     writer: output,
@@ -1877,6 +1880,28 @@ describe('differ', () => {
                 deleted: 3,
                 modified: 1,
                 same: 5
+            });
+            expect(ctx.oldSourceStats).toEqual({
+                parsedRows: 12,
+                duplicateParsedRows: 3,
+                uniqueRows: 9,
+                uniqueRowsWithDuplicates: 3,
+                duplicationPercent: 25,
+                uniqueRowDuplicationPercent: 33.3333,
+                maxDuplicatesPerUniqueKey: 1,
+                minDuplicatesPerUniqueKey: 1,
+                averageDuplicatesPerUniqueKey: 1                
+            });
+            expect(ctx.newSourceStats).toEqual({
+                parsedRows: 10,
+                duplicateParsedRows: 3,
+                uniqueRows: 7,
+                uniqueRowsWithDuplicates: 2,
+                duplicationPercent: 30,
+                uniqueRowDuplicationPercent: 28.5714,
+                maxDuplicatesPerUniqueKey: 2,
+                minDuplicatesPerUniqueKey: 1,
+                averageDuplicatesPerUniqueKey: 1.5                 
             });
         });
         test('should work with http streams (CSV)', async () => {

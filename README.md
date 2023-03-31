@@ -327,8 +327,8 @@ You can resolve the conflict by keeping the first or last row of the duplicates:
 ```Typescript
 import { diff } from 'tabular-data-differ';
 const stats = await diff({
-    oldSource: './tests/a.csv',
-    newSource: './tests/b.csv',
+    oldSource: './tests/a2.csv',
+    newSource: './tests/b2.csv',
     keys: ['id'],
     duplicateKeyHandling: 'keepFirstRow', // or 'keepLastRow'
 }).to('console');
@@ -339,17 +339,34 @@ Or, if you need more control in the row selection, then you can provide your own
 ```Typescript
 import { diff } from 'tabular-data-differ';
 const stats = await diff({
-    oldSource: './tests/a.csv',
-    newSource: './tests/b.csv',
+    oldSource: './tests/a2.csv',
+    newSource: './tests/b2.csv',
     keys: ['id'],
     duplicateKeyHandling: (rows) => rows[0], // same as 'keepFirstRow'
     duplicateRowBufferSize: 2000,
-}).to('console');
+}).to('null');
 console.log(stats);
 ```
 
 Note that you can specify the size of the buffer if you know that it cannot exceed this quantity, otherwise you can enable the **duplicateRowBufferOverflow** option,
-which will remove the first entries when it exceeds the allocated capacity, to avoid a failure.
+which will remove the first entries when it exceeds the allocated capacity, to avoid any failure.
+
+Finally, you can inspect the source stats to check the duplication metrics:
+```Typescript
+import { diff } from 'tabular-data-differ';
+const ctx = await diff({
+    oldSource: './tests/a2.csv',
+    newSource: './tests/b2.csv',
+    keys: ['id'],
+    duplicateKeyHandling: 'keepFirstRow', // or 'keepLastRow'
+}).start();
+const stats = await ctx.to('null');
+console.log(stats);
+console.log(ctx.oldStats);
+console.log(ctx.newStats);
+
+```
+
 
 ### Order 2 CSV files and diff them on the console
 
@@ -631,6 +648,14 @@ Returns the current column names.
 #### stats
 
 Returns the currents stats.
+
+#### oldSourceStats
+
+Returns the stats accumulated while parsing the old source.
+
+#### newSourceStats
+
+Returns the stats accumulated while parsing the new source.
 
 #### to
 

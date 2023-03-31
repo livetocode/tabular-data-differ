@@ -30,6 +30,7 @@ import {
     IterableFormatReaderOptions,
     IterableFormatReader,
     BufferedFormatReader,
+    roundDecimals,
 } from "./formats";
 
 export class UnorderedStreamsError extends Error {
@@ -170,6 +171,57 @@ export interface ColumnDefinition {
 export type DuplicateKeyHandler = (rows: Row[]) => Row;
 
 export type DuplicateKeyHandling = 'fail' |'keepFirstRow' | 'keepLastRow' | DuplicateKeyHandler;
+
+export class SourceStats {
+    parsedRows = 0;
+    duplicateParsedRows = 0;
+    uniqueRows = 0;
+    uniqueRowsWithDuplicates = 0;
+
+    duplicationPercent = 0;
+    uniqueRowDuplicationPercent = 0;
+    
+    maxDuplicatesPerUniqueKey = 0;
+    minDuplicatesPerUniqueKey = 0;
+    averageDuplicatesPerUniqueKey = 0;
+    
+    incParsedRows() {
+        this.parsedRows += 1;
+    }
+    
+    incDuplicateParsedRows() {
+        this.duplicateParsedRows += 1;
+    }
+    
+    incUniqueRows() {
+        this.uniqueRows += 1;
+    }
+    
+    incUniqueRowsWithDuplicates() {
+        this.uniqueRowsWithDuplicates += 1;
+    }
+
+    incDuplicates(value: number) {
+        this.maxDuplicatesPerUniqueKey = Math.max(this.maxDuplicatesPerUniqueKey, value);
+        if (this.minDuplicatesPerUniqueKey === 0) {
+            this.minDuplicatesPerUniqueKey = value;
+        } else {
+            this.minDuplicatesPerUniqueKey = Math.min(this.minDuplicatesPerUniqueKey, value);
+        }
+    }
+
+    calcStats() {
+        if (this.uniqueRowsWithDuplicates) {
+            this.averageDuplicatesPerUniqueKey = roundDecimals(this.duplicateParsedRows / this.uniqueRowsWithDuplicates, 4);
+        }
+        if (this.parsedRows) {
+            this.duplicationPercent = roundDecimals((this.duplicateParsedRows / this.parsedRows) * 100, 4);
+        }
+        if ( this.uniqueRows) {
+            this.uniqueRowDuplicationPercent = roundDecimals((this.uniqueRowsWithDuplicates / this.uniqueRows) * 100, 4);
+        }
+    }
+}
 
 /**
  * Options for configuring the Differ object that will traverse two input streams in parallel in order to compare their rows
@@ -378,6 +430,8 @@ export class DifferContext {
     private normalizeNewRow: RowNormalizer = row => row;
     private duplicateKeyHandling: DuplicateKeyHandling;
     private duplicateRowBufferSize: number;
+    private _oldSourceStats = new SourceStats();
+    private _newSourceStats = new SourceStats();
 
     constructor(private options: DifferOptions) {
         this.oldSource = new BufferedFormatReader(createSource(options.oldSource));
@@ -394,6 +448,8 @@ export class DifferContext {
     async [OpenSymbol](): Promise<void> {
         if (!this._isOpen) {
             this._isOpen = true;
+            this._oldSourceStats = new SourceStats();
+            this._newSourceStats = new SourceStats();
             await this.oldSource.open();
             await this.newSource.open();
             await this.extractHeaders();
@@ -435,6 +491,22 @@ export class DifferContext {
      */
     get stats(): DiffStats {
         return this._stats;
+    }
+
+    /**
+     * gets the stats accumulated while parsing the old source
+     * @returns the source stats
+     */
+    get oldSourceStats(): SourceStats {
+        return this._oldSourceStats;
+    }
+
+    /**
+     * gets the stats accumulated while parsing the new source
+     * @returns the source stats
+     */
+    get newSourceStats(): SourceStats {
+        return this._newSourceStats;
     }
     
     /**
@@ -542,6 +614,8 @@ export class DifferContext {
                 previousPair = pair;
             }
         } finally {
+            this.oldSourceStats.calcStats();
+            this.newSourceStats.calcStats();
             this.close();
         }
     }
@@ -609,11 +683,13 @@ export class DifferContext {
         return result;
     }
 
-    async getNextRow(source: BufferedFormatReader): Promise<Row | undefined> {        
+    async getNextRow(source: BufferedFormatReader, stats: SourceStats): Promise<Row | undefined> {        
         const row = await source.readRow();
         if (!row) {
             return row;
         }
+        stats.incParsedRows();
+        stats.incUniqueRows();
         if (this.duplicateKeyHandling === 'fail') {
             // Note that it will be further processed in ensureRowsAreInAscendingOrder
             return row;
@@ -626,9 +702,14 @@ export class DifferContext {
         if (isDuplicate) {
             const duplicateRows: Row[] = [];
             duplicateRows.push(row);
+            stats.incUniqueRowsWithDuplicates();
+            let duplicateCount = 0;
             while(isDuplicate) {
                 const duplicateRow = await source.readRow();
                 if (duplicateRow) {
+                    duplicateCount += 1;
+                    stats.incParsedRows();
+                    stats.incDuplicateParsedRows();
                     if (this.duplicateKeyHandling !== 'keepFirstRow') {
                         // we don't need to accumulate duplicate rows when we just have to return the first row!
                         duplicateRows.push(duplicateRow);
@@ -649,6 +730,7 @@ export class DifferContext {
                 const nextRow = await source.peekRow();                        
                 isDuplicate = !!nextRow && this.comparer(this.keys, nextRow, row) === 0;
             }
+            stats.incDuplicates(duplicateCount);
             if (this.duplicateKeyHandling === 'keepFirstRow') {
                 return duplicateRows[0];
             }
@@ -661,11 +743,11 @@ export class DifferContext {
     }
 
     private getNextOldRow(): Promise<Row | undefined> {        
-        return this.getNextRow(this.oldSource);
+        return this.getNextRow(this.oldSource, this._oldSourceStats);
     }
 
     private getNextNewRow(): Promise<Row | undefined> {
-        return this.getNextRow(this.newSource);
+        return this.getNextRow(this.newSource, this._newSourceStats);
     }
 
     private async getNextPair():Promise<RowPair> {
@@ -693,7 +775,7 @@ export class DifferContext {
             const oldDelta = this.comparer(this.keys, previous, current);
             if (oldDelta === 0) {
                 const cols = this.keys.map(key => key.name);
-                throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}`);    
+                throw new UniqueKeyViolationError(`Expected rows to be unique by "${cols}" in ${source} source but received:\n  previous=${previous}\n  current=${current}\nNote that you can resolve this conflict automatically using the duplicateKeyHandling option.`);    
             }
             if (oldDelta > 0) {
                 const colOrder = this.keys.map(key => `${key.name} ${key.sortDirection ?? 'ASC'}`);
