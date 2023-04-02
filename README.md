@@ -631,7 +631,7 @@ This returns the change stats once completed.
 The options parameter can be either a standard output (console, null), a string filename, a URL or an OutputOptions.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered by the specified keys.
-Note that it can throw the UniqueKeyViolationError exception if it detects that a stream has duplicate keys wich violates the primary keys specified in the options.
+Note that it can throw the UniqueKeyViolationError exception if it detects that a stream has duplicate keys which violates the primary keys specified in the options.
 
 ### DifferContext methods
 
@@ -666,14 +666,14 @@ This returns the change stats once completed.
 The options parameter can be either a standard output (console, null), a string filename, a URL or an OutputOptions.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered by the specified keys.
-Note that it can throw the UniqueKeyViolationError exception if it detects that a stream has duplicate keys wich violates the primary keys specified in the options.
+Note that it can throw the UniqueKeyViolationError exception if it detects that a stream has duplicate keys which violates the primary keys specified in the options.
 
 #### diffs
 
 Enumerates the differences between the old and new sources.
 
 Note that it can throw the UnorderedStreamsError exception if it detects that the streams are not properly ordered by the specified keys.
-Note that it can throw the UniqueKeyViolationError exception if it detects that a stream has duplicate keys wich violates the primary keys specified in the options.
+Note that it can throw the UniqueKeyViolationError exception if it detects that a stream has duplicate keys which violates the primary keys specified in the options.
 
 ### JSON input format
 

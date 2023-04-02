@@ -173,8 +173,8 @@ export type DuplicateKeyHandler = (rows: Row[]) => Row;
 export type DuplicateKeyHandling = 'fail' |'keepFirstRow' | 'keepLastRow' | DuplicateKeyHandler;
 
 export class SourceStats {
-    parsedRows = 0;
-    duplicateParsedRows = 0;
+    rows = 0;
+    duplicateRows = 0;
     uniqueRows = 0;
     uniqueRowsWithDuplicates = 0;
 
@@ -185,12 +185,12 @@ export class SourceStats {
     minDuplicatesPerUniqueKey = 0;
     averageDuplicatesPerUniqueKey = 0;
     
-    incParsedRows() {
-        this.parsedRows += 1;
+    incRows() {
+        this.rows += 1;
     }
     
-    incDuplicateParsedRows() {
-        this.duplicateParsedRows += 1;
+    incDuplicateRows() {
+        this.duplicateRows += 1;
     }
     
     incUniqueRows() {
@@ -212,10 +212,10 @@ export class SourceStats {
 
     calcStats() {
         if (this.uniqueRowsWithDuplicates) {
-            this.averageDuplicatesPerUniqueKey = roundDecimals(this.duplicateParsedRows / this.uniqueRowsWithDuplicates, 4);
+            this.averageDuplicatesPerUniqueKey = roundDecimals(this.duplicateRows / this.uniqueRowsWithDuplicates, 4);
         }
-        if (this.parsedRows) {
-            this.duplicationPercent = roundDecimals((this.duplicateParsedRows / this.parsedRows) * 100, 4);
+        if (this.rows) {
+            this.duplicationPercent = roundDecimals((this.duplicateRows / this.rows) * 100, 4);
         }
         if ( this.uniqueRows) {
             this.uniqueRowDuplicationPercent = roundDecimals((this.uniqueRowsWithDuplicates / this.uniqueRows) * 100, 4);
@@ -393,7 +393,7 @@ export class Differ {
 
     /**
      * Iterates over the changes and sends them to the submitted output.
-     * @param options a standard ouput such as console or null, a string filename, a URL or a custom OutputOptions.
+     * @param options a standard output such as console or null, a string filename, a URL or a custom OutputOptions.
      * @returns the change stats once all the changes have been processed. 
      * Note that the stats might be different from getStats() when there is a filter in the output options, 
      * as the differ stats are updated by the iterator which doesn't have any filter.
@@ -511,7 +511,7 @@ export class DifferContext {
     
     /**
      * Iterates over the changes and sends them to the submitted output.
-     * @param options a standard ouput such as console or null, a string filename, A URL or a custom OutputOptions.
+     * @param options a standard output such as console or null, a string filename, A URL or a custom OutputOptions.
      * @returns the change stats once all the changes have been processed. 
      * Note that the stats might be different from "DiffContext.stats" when there is a filter in the output options, 
      * as the context stats are updated by the iterator which doesn't have any filter.
@@ -682,16 +682,53 @@ export class DifferContext {
         }
         return result;
     }
+    
+    async readDuplicatesOf(source: BufferedFormatReader, stats: SourceStats, row: Row): Promise<Row[]> {        
+        const duplicateRows: Row[] = [];
+        duplicateRows.push(row);
+        stats.incUniqueRowsWithDuplicates();
+        let duplicateCount = 0;
+        let isDuplicate = true;
+        while(isDuplicate) {
+            const duplicateRow = await source.readRow();
+            if (duplicateRow) {
+                duplicateCount += 1;
+                stats.incRows();
+                stats.incDuplicateRows();
+                if (this.duplicateKeyHandling !== 'keepFirstRow') {
+                    // we don't need to accumulate duplicate rows when we just have to return the first row!
+                    duplicateRows.push(duplicateRow);
+                }
+                if (this.duplicateKeyHandling === 'keepLastRow') {
+                    // we don't need to accumulate the previous rows when we just have to return the last row!
+                    duplicateRows.shift();
+                }
+                if (duplicateRows.length > this.duplicateRowBufferSize) {
+                    if (this.options.duplicateRowBufferOverflow) {
+                        // remove the first entry when we can overflow
+                        duplicateRows.shift();
+                    } else {
+                        throw new Error('Too many duplicate rows');
+                    }
+                }
+            }
+            const nextRow = await source.peekRow();                        
+            isDuplicate = !!nextRow && this.comparer(this.keys, nextRow, row) === 0;
+        }
+        stats.incDuplicates(duplicateCount);
+        stats.calcStats();
+        return duplicateRows;
+    }
 
     async getNextRow(source: BufferedFormatReader, stats: SourceStats): Promise<Row | undefined> {        
         const row = await source.readRow();
         if (!row) {
             return row;
         }
-        stats.incParsedRows();
+        stats.incRows();
         stats.incUniqueRows();
         if (this.duplicateKeyHandling === 'fail') {
-            // Note that it will be further processed in ensureRowsAreInAscendingOrder
+            // Note that it will be further processed in ensureRowsAreInAscendingOrder and throw a UniqueKeyViolationError exception
             return row;
         }
         const nextRow = await source.peekRow();
@@ -700,37 +737,7 @@ export class DifferContext {
         }
         let isDuplicate = this.comparer(this.keys, nextRow, row) === 0;
         if (isDuplicate) {
-            const duplicateRows: Row[] = [];
-            duplicateRows.push(row);
-            stats.incUniqueRowsWithDuplicates();
-            let duplicateCount = 0;
-            while(isDuplicate) {
-                const duplicateRow = await source.readRow();
-                if (duplicateRow) {
-                    duplicateCount += 1;
-                    stats.incParsedRows();
-                    stats.incDuplicateParsedRows();
-                    if (this.duplicateKeyHandling !== 'keepFirstRow') {
-                        // we don't need to accumulate duplicate rows when we just have to return the first row!
-                        duplicateRows.push(duplicateRow);
-                    }
-                    if (this.duplicateKeyHandling === 'keepLastRow') {
-                        // we don't need to accumulate the previous rows when we just have to return the last row!
-                        duplicateRows.shift();
-                    }
-                    if (duplicateRows.length > this.duplicateRowBufferSize) {
-                        if (this.options.duplicateRowBufferOverflow) {
-                            // remove the first entry when we can overflow
-                            duplicateRows.shift();
-                        } else {
-                            throw new Error('Too many duplicate rows');
-                        }
-                    }
-                }
-                const nextRow = await source.peekRow();                        
-                isDuplicate = !!nextRow && this.comparer(this.keys, nextRow, row) === 0;
-            }
-            stats.incDuplicates(duplicateCount);
+            const duplicateRows = await this.readDuplicatesOf(source, stats, row);
             if (this.duplicateKeyHandling === 'keepFirstRow') {
                 return duplicateRows[0];
             }

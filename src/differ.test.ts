@@ -1882,8 +1882,8 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                 same: 5
             });
             expect(ctx.oldSourceStats).toEqual({
-                parsedRows: 12,
-                duplicateParsedRows: 3,
+                rows: 12,
+                duplicateRows: 3,
                 uniqueRows: 9,
                 uniqueRowsWithDuplicates: 3,
                 duplicationPercent: 25,
@@ -1893,8 +1893,8 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                 averageDuplicatesPerUniqueKey: 1                
             });
             expect(ctx.newSourceStats).toEqual({
-                parsedRows: 10,
-                duplicateParsedRows: 3,
+                rows: 10,
+                duplicateRows: 3,
                 uniqueRows: 7,
                 uniqueRowsWithDuplicates: 2,
                 duplicationPercent: 30,
