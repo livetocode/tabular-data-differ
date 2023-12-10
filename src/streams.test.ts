@@ -1,6 +1,10 @@
+import * as fs from 'fs';
 import { ArrayInputStream, ConsoleOutputStream, FileInputStream, FileOutputStream, NullOutputStream } from "./streams";
 
 describe('streams', () => {
+    beforeAll(() => {
+        fs.mkdirSync('./output/files', { recursive: true });
+    });
     test('should read/write to a file', async () => {
         const f = new FileOutputStream('./output/files/test.txt');
         await f.open();
