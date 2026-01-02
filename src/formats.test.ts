@@ -159,13 +159,13 @@ describe('formats', () => {
             const reader = new JsonFormatReader({ stream });
             await expect(async () => {
                 await reader.readHeader();
-            }).rejects.toThrowError('Cannot access textReader because stream is not open');
+            }).rejects.toThrow('Cannot access textReader because stream is not open');
         });        
         test('writing to a closed stream should fail', async () => {
             const writer = new JsonFormatWriter({ stream: './output/files/output.json' });
             await expect(async () => {
                 await writer.writeHeader({columns: ['id', 'name']});
-            }).rejects.toThrowError('Cannot access textWriter because stream is not open');
+            }).rejects.toThrow('Cannot access textWriter because stream is not open');
         });        
         test('empty string should fail', async () => {
             const stream = new ArrayInputStream([
@@ -175,7 +175,7 @@ describe('formats', () => {
             await reader.open();
             await expect(async () => {
                 await reader.readHeader();
-            }).rejects.toThrowError('Expected to find at least one object');
+            }).rejects.toThrow('Expected to find at least one object');
         });        
         test('empty stream should fail', async () => {
             const stream = new ArrayInputStream([]);
@@ -183,7 +183,7 @@ describe('formats', () => {
             await reader.open();
             await expect(async () => {
                 await reader.readHeader();
-            }).rejects.toThrowError('Expected to find at least one object');
+            }).rejects.toThrow('Expected to find at least one object');
         });        
         test('row should contain an object or fail, while reading the header', async () => {
             const stream = new ArrayInputStream([
@@ -193,7 +193,7 @@ describe('formats', () => {
             await reader.open();
             await expect(async () => {
                 await reader.readHeader();
-            }).rejects.toThrowError('Expected to find a JSON object');
+            }).rejects.toThrow('Expected to find a JSON object');
         });        
         test('row should contain an object or fail, while reading the header', async () => {
             const stream = new ArrayInputStream([
@@ -210,7 +210,7 @@ describe('formats', () => {
             expect(row1).toEqual(['1', 'a1', 'b1', 'c1']);
             await expect(async () => {
                 await reader.readRow();
-            }).rejects.toThrowError('Expected to find a JSON object');
+            }).rejects.toThrow('Expected to find a JSON object');
         });
         test('should not convert object values to string', async () => {
             const stream = new ArrayInputStream([
@@ -246,7 +246,7 @@ describe('formats', () => {
     });
     describe('comparison', () => {
         test('should have at least one key', () => {
-            expect(() => defaultRowComparer([], undefined, undefined)).toThrowError('Expected to have at least one entry in the columns parameter');
+            expect(() => defaultRowComparer([], undefined, undefined)).toThrow('Expected to have at least one entry in the columns parameter');
         });
         describe('undefined rows', () => {
             const keys: Column[] = [{
@@ -430,7 +430,7 @@ describe('formats', () => {
             });
             await expect(async () => {
                 await format.readHeader();
-            }).rejects.toThrowError('You must call open before reading content!');
+            }).rejects.toThrow('You must call open before reading content!');
         });
         test('should open once', async () => {
             const format = new IterableFormatReader({
@@ -439,7 +439,7 @@ describe('formats', () => {
             await format.open();
             await expect(async () => {
                 await format.open();
-            }).rejects.toThrowError('Reader is already open!')            
+            }).rejects.toThrow('Reader is already open!')            
         });
         test('should not be empty', async () => {
             const format = new IterableFormatReader({
@@ -449,7 +449,7 @@ describe('formats', () => {
             try {
                 await expect(async () => {
                     await format.readHeader();
-                }).rejects.toThrowError('Expected to find at least one object');    
+                }).rejects.toThrow('Expected to find at least one object');    
             } finally {
                 format.close();
             }

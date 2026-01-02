@@ -86,7 +86,7 @@ describe('differ', () => {
                     },
                     keys: ['id'],
                 }).to('null');
-            }).rejects.toThrowError(`Unknown source format 'foobar'`);
+            }).rejects.toThrow(`Unknown source format 'foobar'`);
         });
         test('should reject unknown destination format', async () => {
             await expect(async () => {
@@ -106,7 +106,7 @@ describe('differ', () => {
                         stream: 'console',    
                     },
                 });
-            }).rejects.toThrowError(`Unknown destination format 'foo'`);
+            }).rejects.toThrow(`Unknown destination format 'foo'`);
         });        
         test('should detect invalid ordering in ascending mode', async () => {
             await expect(() => diffStrings({
@@ -123,7 +123,7 @@ describe('differ', () => {
                     '2,rachel,22',
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError(`Expected rows to be ordered by \"ID ASC\" in new source but received:
+            })).rejects.toThrow(`Expected rows to be ordered by \"ID ASC\" in new source but received:
   previous=3,dave,44
   current=2,rachel,22`);
         });        
@@ -145,7 +145,7 @@ describe('differ', () => {
                     name: 'ID',
                     order: 'DESC',
                 }],
-            })).rejects.toThrowError(new UnorderedStreamsError(`Expected rows to be ordered by "ID DESC" in new source but received:
+            })).rejects.toThrow(new UnorderedStreamsError(`Expected rows to be ordered by "ID DESC" in new source but received:
   previous=1,john,33
   current=2,rachel,22`));
         });        
@@ -166,7 +166,7 @@ describe('differ', () => {
                     '3,dave,44',
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in old source but received:
+            })).rejects.toThrow(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in old source but received:
   previous=3,dave,44
   current=3,dave bis,444
 Note that you can resolve this conflict automatically using the duplicateKeyHandling option.`));
@@ -188,7 +188,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                     '4,noemie,11',
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in new source but received:
+            })).rejects.toThrow(new UniqueKeyViolationError(`Expected rows to be unique by "ID" in new source but received:
   previous=3,dave,44
   current=3,dave bis,444
 Note that you can resolve this conflict automatically using the duplicateKeyHandling option.`));
@@ -421,7 +421,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                 duplicateKeyHandling: (rows) => rows[0],
                 duplicateRowBufferSize: 5,
                 keepSameRows: true,
-            })).rejects.toThrowError('Too many duplicate rows');
+            })).rejects.toThrow('Too many duplicate rows');
         });                    
         test('should be able to execute twice', async () => {
             const differ = diff({
@@ -441,7 +441,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
             const f = new FileOutputStream('./output/files/output.csv');
             await f.open();
             try {
-                await expect(async () => await f.open()).rejects.toThrowError('file \"./output/files/output.csv\" is already open');
+                await expect(async () => await f.open()).rejects.toThrow('file \"./output/files/output.csv\" is already open');
             } finally {
                 await f.close();
             }
@@ -454,7 +454,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                     'ID,NAME,AGE',
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError('Expected to find columns in old source');
+            })).rejects.toThrow('Expected to find columns in old source');
         });
         test('should have columns in new source', async () => {
             await expect(() => diffStrings({
@@ -464,7 +464,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                 newLines: [
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError('Expected to find columns in new source');            
+            })).rejects.toThrow('Expected to find columns in new source');            
         });
         test('should find keys in old columns', async () => {
             await expect(() => diffStrings({
@@ -475,7 +475,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                     'ID,NAME,AGE',
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError(`Could not find key 'ID' in old stream`);            
+            })).rejects.toThrow(`Could not find key 'ID' in old stream`);            
         });
         test('should find keys in new columns', async () => {
             await expect(() => diffStrings({
@@ -488,7 +488,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                     'a1,a,33',
                 ],
                 keys: ['ID'],
-            })).rejects.toThrowError(`Could not find key 'ID' in new stream`);            
+            })).rejects.toThrow(`Could not find key 'ID' in new stream`);            
         });
         test('should not allow calling diffs() twice', async () => {
             const ctx = await diff({
@@ -506,7 +506,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
                 for await (const rowDiff of ctx.diffs()) {
 
                 }
-            }).rejects.toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
+            }).rejects.toThrow('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
         });
         test('should not allow calling to() twice', async () => {
             const ctx = await diff({
@@ -520,7 +520,7 @@ Note that you can resolve this conflict automatically using the duplicateKeyHand
             expect(ctx.isOpen).toBeFalsy();
             await expect(async () => {
                 await ctx.to('null');
-            }).rejects.toThrowError('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
+            }).rejects.toThrow('Cannot get diffs on closed streams. You should call "Differ.start()" again.');
         });        
         test('should allow calling start() twice', async () => {
             const differ = diff({
@@ -2869,7 +2869,7 @@ added,3,sarah,true,600
                     },
                     keys: ['id'],
                 }).to('./output/files/output.csv');
-            }).rejects.toThrowError(`Expected rows to be unique by "id" in old source but received:
+            }).rejects.toThrow(`Expected rows to be unique by "id" in old source but received:
   previous=2,mary,false,3210.22
   current=2,mary,false,100`);
         });

@@ -18,11 +18,11 @@ export interface StreamReadOptions {
     /**
      * @default 0
      */
-    offset?: number | null;
+    offset?: number | undefined;
     /**
-     * @default `buffer.byteLength`
+     * @default `length of buffer`
      */
-    length?: number | null;
+    length?: number | undefined;
 }
 
 export interface StreamWriteResult {
@@ -35,11 +35,11 @@ export interface StreamWriteOptions {
     /**
      * @default 0
      */
-    offset?: number | null;
+    offset?: number | undefined;
     /**
      * @default `buffer.byteLength`
      */
-    length?: number | null;
+    length?: number | undefined;
 }
 
 interface TextReaderOptions {
